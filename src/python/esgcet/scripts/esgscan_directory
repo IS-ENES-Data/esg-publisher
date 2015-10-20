@@ -1,387 +1,455 @@
 #!/usr/bin/env python
+"""
+   :platform: Unix
+   :synopsis: Build ESGF mapfiles without ``esgscan_directory`` upon local ESGF datanode.
+
+"""
 
 import sys
 import os
 import re
-import getopt
+import argparse
+import logging
+from esgcet.esgscan.esgmapfilesutils import init_logging, check_directory, config_parse, split_line
+from multiprocessing.dummy import Pool as ThreadPool
+from functools import wraps
+from argparse import RawTextHelpFormatter
+from lockfile import LockFile, LockTimeout, LockFailed
+from tempfile import mkdtemp
+from shutil import copy2, rmtree
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from esgcet.publish import multiDirectoryIterator, directoryIterator, processIterator, readDatasetMap, processNodeMatchIterator, checksum, fnIterator
-from esgcet.config import loadConfig, getHandler, getHandlerByName, initLogging, registerHandlers, getOfflineLister, splitLine
-from esgcet.exceptions import *
-from esgcet.messaging import debug, info, warning, error, critical, exception
-from multiprocessing.pool import ThreadPool
+# Program version
+__version__ = '{0} {1}-{2}-{3}'.format('v0.5.3', '2015', '10', '05')
 
 
-usage = """Usage:
-    esgscan_directory [options] directory [directory ...]
+class ProcessingContext(object):
+    """
+    Encapsulates the following processing context/information for main process:
 
-    Scan a set of directories recursively for a specific project, producing a dataset map of the form:
+    +---------------------+-------------+---------------------------------------+
+    | Attribute           | Type        | Description                           |
+    +=====================+=============+=======================================+
+    | *self*.directory    | *list*      | Paths to scan                         |
+    +---------------------+-------------+---------------------------------------+
+    | *self*.latest       | *boolean*   | True if latest version                |
+    +---------------------+-------------+---------------------------------------+
+    | *self*.outdir       | *str*       | Output directory                      |
+    +---------------------+-------------+---------------------------------------+
+    | *self*.verbose      | *boolean*   | True if verbose mode                  |
+    +---------------------+-------------+---------------------------------------+
+    | *self*.with_version | *boolean*   | True to include version in dataset ID |
+    +---------------------+-------------+---------------------------------------+
+    | *self*.project      | *str*       | Project                               |
+    +---------------------+-------------+---------------------------------------+
+    | *self*.dataset      | *boolean*   | True if one mapfile per dataset       |
+    +---------------------+-------------+---------------------------------------+
+    | *self*.checksum     | *boolean*   | True if checksums into mapfile        |
+    +---------------------+-------------+---------------------------------------+
+    | *self*.outmap       | *str*       | Mapfile output name                   |
+    +---------------------+-------------+---------------------------------------+
+    | *self*.cfg          | *callable*  | Configuration file parser             |
+    +---------------------+-------------+---------------------------------------+
+    | *self*.pattern      | *re object* | DRS regex pattern                     |
+    +---------------------+-------------+---------------------------------------+
+    | *self*.dtemp        | *str*       | Directory of temporary files          |
+    +---------------------+-------------+---------------------------------------+
 
-	dataset_id | absolute_file_path | size
+    :param dict args: Parsed command-line arguments
+    :returns: The processing context
+    :rtype: *dict*
+    :raises Error: If the project name is inconsistent with the sections names from the configuration file
 
-    for each directory that has at least one file matching the file filter (see --filter).    
-
-Arguments:
-    directory: A directory to scan.
-
-Options:
-
-    -a dataset_map:
-        Append the output to the existing dataset_map. If dataset_map does not exist, create it.
-        Compare with -o.
-
-    --dataset dataset_name:
-        String name of the dataset. If specified, all files will belong to the specified dataset,
-        regardless of path. See Notes for the behavior if omitted.
-
-    --dataset-tech-notes url
-        URL of the technical notes to be associated with each dataset.
-
-    --dataset-tech-notes-title title
-        Tech notes title for display.
-
-    --filter regular_expression:
-        Filter files matching the regular expression. Default is '.*\.nc$'
-        Regular expression syntax is defined by the Python re module.
-
-    -h, --help: Print a help message.
-
-    -i init_file: Initialization file. If not specified, the default installed init file is read.
-
-    --max-threads max_threads:
-        Number of maximal threads for checksum calculation. Default: 4
-    
-    -o, --output dataset_map:
-        Name of the output dataset map file. If the file exists, replace it. Compare with -a.
-        Defaults to standard output.
-
-    --offline
-        The directory is offline. The dataset name must also be specified with --dataset.
-
-    -p, --property 'name=value':
-        Add a property/value pair. This option can be used multiple times. The property is only
-        used to generate the dataset ID.
-
-        Note: the property must also be configured in the initialization file
-        and project handler.
-
-    --project project_id:
-        Project identifier. If not specified, the project is determined from the first file found that
-        matches the file filter.
-
-    -e, --read-directories:
-        Read dataset identification information from the directory
-        names. THIS ASSUMES THAT EACH FILE IN A LEAF DIRECTORY BELONGS
-        TO THE SAME DATASET. See --read-files, and Notes. This option
-        is the default, and is generally faster than --read-files.
-
-    --read-files:
-        Read dataset identification information from each individual
-        file. If not set, the dataset ID is generated by matching the
-        directory with the config file option 'directory_format'.  See
-        --read-directories and Notes.
-
-    --service service
-        Specify a THREDDS service name to associate with an offline dataset. If omitted, the name of the
-        first offline service in the configuration ''thredds_offline_services'' is used. This determines
-        which offline lister to use.
- 
-    --use-version-dir:
-            Use version number specified in drs. Use latest version as default or specify version using '--version'.
-    
-    --version version
-         Add all datasets matching version <version> to mapfile. Ignore all other versions.
-         Includes '--use-version-dir'.
-
-Notes:
-
-    If --dataset is not set, the dataset IDs are generated in one of two ways:
-
-    (1) If --read-files is set:
-
-        (a) The directories are searched recursively. For each file matching the file filter:
-
-        (b) The global attributes are read from the file metadata, by the project handler.
-
-        (c) The dataset_id configuration option is used to generate the identifier, based on the file metadata.
-
-        Example: If a CMIP5 file has attributes:
-
-            :model_id = "cnrm-cm5" ;
-            :experiment_id = "1pctCO2"
-
-        and the dataset_id option is cmip5.%(model)s.%(experiment)s, then the dataset ID is 'cmip5.cnrm-cm5.1pctCO2'.
-
-    (2) If --read-files is NOT set:
-
-        (a) The directories are searched recursively. For each directory that contains a file matching
-        the file filter:
-
-        (b) The directory is compared against the directory_format configuration option for the project.
-        If it matches:
-
-        (c) The dataset_id configuration option is used to generate the identifier, based on the match.
-
-        Example: If the directory_format = /data/%(model)s/%(experiment)s, and dataset_id = myproj.%(model)s.%(experiment)s,
-        then files in directory /data/pcm/history will have dataset IDs 'myproj.pcm.history'.
-
-        IMPORTANT: This option assumes that for a given leaf directory, each file in the directory belongs to the
-        same dataset. If you are publishing CMIP5 data, and are using the publisher to recognize the 'product' value,
-        it is NOT recommended to use this option, since for some files the 'product' depends on the time range
-        of the file.
-
-"""
-
-def main(argv):
-    try:
-        args, lastargs = getopt.getopt(argv, "a:ehi:o:p:", ['dataset=', 'dataset-tech-notes=', 'dataset-tech-notes-title=',\
-            'filter=', 'help', 'max-threads=', 'offline', 'output=', 'project=', 'property=', 'read-directories', 'read-files',\
-            'service=', 'use-version-dir', 'version='])
-    except getopt.error:
-        print sys.exc_value
-        print usage
-        sys.exit(0)
-
-    if len(lastargs)==0:
-        print 'No directory specified'
-        print usage
-        sys.exit(0)
-
-    appendMap = None
-    datasetName = None
-    datasetTechNotesURL = None
-    datasetTechNotesTitle = None
-    filefilt = '.*'
-    init_file = None
-    offline = False
-    output = sys.stdout
-    projectName = None
-    properties = {}
-    readFiles = False
-    service = None
-    max_threads = 4
-    version_dir = False
-    use_version = None
-    
-    for flag, arg in args:
-        if flag=='-a':
-            if os.path.exists(arg):
-                appendMap = readDatasetMap(arg)
-            else:
-                appendMap = {}
-            output = open(arg, 'a')
-        elif flag=='--dataset':
-            datasetName = arg
-        elif flag=='--dataset-tech-notes':
-            datasetTechNotesURL = arg
-        elif flag=='--dataset-tech-notes-title':
-            datasetTechNotesTitle = arg
-        elif flag=='--filter':
-            filefilt = arg
-        elif flag in ['-h', '--help']:
-            print usage
-            sys.exit(0)
-        elif flag=='-i':
-            init_file = arg
-        elif flag=='--max-threads':
-            max_threads = int(arg)
-        elif flag in ['-o', '--output']:
-            output = open(arg, 'w')
-        elif flag=='--offline':
-            offline = True
-        elif flag=='--project':
-            projectName = arg
-        elif flag in ['-p', '--property']:
-            name, value = arg.split('=')
-            properties[name] = value
-        elif flag in ['-e', '--read-directories']:
-            readFiles = False
-        elif flag=='--read-files':
-            readFiles = True
-        elif flag=='--service':
-            service = arg
-        elif flag=='--use-version-dir':
-            version_dir = True
-        elif flag=='--version':
-            version_dir = True
-            if not re.match('^[0-9]+$', arg[0]): # e.g. 'vYYYYMMDD'
-                use_version = arg[1:]
-            else:
-                use_version = arg
-    
-    # Load the configuration and set up a database connection
-    config = loadConfig(init_file)
-    engine = create_engine(config.getdburl('extract'), echo=False, pool_recycle=3600)
-    initLogging('extract', override_sa=engine)
-    Session = sessionmaker(bind=engine, autoflush=True, autocommit=False)
-
-    # Register project handlers
-    registerHandlers()
-
-    if not offline:
-
-        # Determine if checksumming is enabled
-        line = config.get('DEFAULT', 'checksum', default=None)
-        if line is not None:
-            checksumClient, checksumType = splitLine(line)
-        else:
-            checksumClient = None
-
-        if projectName is not None:
-            handler = getHandlerByName(projectName, None, Session)
-        else:
-            warning("No project name specified!")
-            multiIter = multiDirectoryIterator(lastargs, filefilt=filefilt)
-            firstFile, size = multiIter.next()
-            handler = getHandler(firstFile, Session, validate=True)
-            if handler is None:
-                raise ESGPublishError("No project found in file %s, specify with --project."%firstFile)
-            projectName = handler.name
-
-        if not readFiles:
-            datasetMap = handler.generateDirectoryMap(lastargs, filefilt, initContext=properties, datasetName=datasetName, use_version=version_dir)
-        else:
-            datasetMap = handler.generateDirectoryMapFromFiles(lastargs, filefilt, initContext=properties, datasetName=datasetName)
-
-        # Output the map
-        keys = datasetMap.keys()
-        keys.sort()
-  
-        datasetMapVersion = {}
-        if version_dir:
-            # check for version directory
-            for dataset_id in keys:
-                ds_id_version = dataset_id.split('#')
-                if len(ds_id_version) == 2:
-                    ds_id, ds_version = ds_id_version
-                    if not re.match('^[0-9]+$', ds_version):
-                        warning("Version must be an integer. Skipping version %s of dataset %s."%(ds_version, ds_id))
-                        continue
-                    if use_version and ds_version != use_version:
-                            continue
-                    if ds_id in datasetMapVersion:
-                        datasetMapVersion[ds_id].append(ds_version)
-                    else:
-                        datasetMapVersion[ds_id] = [ds_version]
-                else:
-                    error("No version directory found. Skipping dataset %s."%dataset_id)
-                    
-            if datasetMapVersion:
-                keys = datasetMapVersion.keys()
-                keys.sort()
-            else:
-                if use_version:
-                    error("Version %s not found. No datasets to process."%use_version)
-                else:
-                    error("No datasets to process.")                   
-                sys.exit(0)
-
-        for dataset_id in keys:
-            skip_dataset = False
-            dataset_id_version = dataset_id
-            path_version = None
-            # if multiple versions of the same dataset available use latest version
-            if version_dir:
-                path_version = sorted(datasetMapVersion[dataset_id])[-1]
-                if len(datasetMapVersion[dataset_id]) > 1:
-                    info("Multiple versions for %s (%s), processing latest (%s)"%(dataset_id, datasetMapVersion[dataset_id], path_version))
-                dataset_id_version = '%s#%s'%(dataset_id, path_version)
-                
-            direcTuple = datasetMap[dataset_id_version]
-            direcTuple.sort()
-            mapfile_md = {}
-            
-            for nodepath, filepath in direcTuple:
-
-                # If readFiles is not set, generate a map entry for each file in the directory
-                # that matches filefilt ...
-                if not readFiles:
-                    itr = directoryIterator(nodepath, filefilt=filefilt, followSubdirectories=False)
-                # ... otherwise if readFiles is set, generate a map entry for each file
-                else:
-                    itr = fnIterator([filepath])
-                    
-                for filepath, sizet in itr:
-                    size, mtime = sizet
-
-                    mapfile_md[filepath] = [size]
-                    mapfile_md[filepath].append("mod_time=%f"%float(mtime))
-                    
-                    extraStuff = "mod_time=%f"%float(mtime)
-
-                    if datasetTechNotesURL is not None:
-                        mapfile_md[filepath].append('dataset_tech_notes=%s'%datasetTechNotesURL)
-                        if datasetTechNotesURL is not None:
-                            mapfile_md[filepath].append('dataset_tech_notes_title=%s'%datasetTechNotesTitle)
-                    
-            if checksumClient is not None:
-                pool = ThreadPool(processes=max_threads)
-                args = [(filepath, checksumClient) for filepath in mapfile_md]
-                checksum_list = pool.map(calc_checksum_wrapper, args)
+    """
+    def __init__(self, args):
+        init_logging(args.logdir)
+        for path in args.directory:
+            check_directory(path)
+        self.directory = args.directory
+        self.outmap = args.mapfile
+        self.verbose = args.verbose
+        self.latest = args.latest
+        self.outdir = args.outdir
+        self.with_version = args.with_version
+        self.dataset = args.per_dataset
+        self.cfg = config_parse(args.config)
+        self.project = 'project:' + args.project
+        if not self.project in self.cfg.sections():
+            raise Exception('No section in configuration file corresponds to "{0}" project. Supported projects are {1}.'.format(args.project, self.cfg.sections()))
         
-                for entry in checksum_list:
-                    if not entry[1]:
-                        error('Calculation of checksum for file %s failed. Skipping dataset %s ...'%(entry[0], dataset_id))
-                        skip_dataset = True     # skip entire dataset if we have one file without checksum
-                        break
-                    mapfile_md[entry[0]].append('checksum=%s'%entry[1])
-                    mapfile_md[entry[0]].append('checksum_type=%s'%checksumType)
-
-            for fpath in mapfile_md:
-                mapfile_line = '%s | %s | %d'%(dataset_id_version, fpath, mapfile_md[fpath][0])
-
-                for md in mapfile_md[fpath][1:]:
-                    mapfile_line+=' | %s'%md
-
-                # Print the map entry if:
-                # - Checksum exists for all files of dataset (in case checksumming is enabled)
-                # - The map is being created, not appended, or
-                # - The existing map does not have the dataset, or
-                # - The existing map has the dataset, but not the file.
-                if path_version:
-                    ds_id = (dataset_id, int(path_version))
-                else:
-                    ds_id = (dataset_id, -1)
-                if not skip_dataset and ( (appendMap is None) or (not appendMap.has_key(ds_id)) or (( fpath, "%d"% mapfile_md[fpath][1]) not in appendMap[ds_id]) ):
-                    print >>output, mapfile_line
-    
-    else:                               # offline
-        if projectName is not None:
-            handler = getHandlerByName(projectName, None, Session, offline=True)
+        line = self.cfg.defaults()['checksum']
+        if line is not None:
+            self.checksum_client, self.checksum_type = split_line(line)
         else:
-            raise ESGPublishError("Must specify --project for offline datasets.")
-        listerSection = getOfflineLister(config, "project:%s"%projectName, service)
-        offlineLister = config.get(listerSection, 'offline_lister_executable')
-        commandArgs = "--config-section %s "%listerSection
-        commandArgs += " ".join(lastargs)
-        for dsetName, filepath, sizet in processNodeMatchIterator(offlineLister, commandArgs, handler, filefilt=filefilt, datasetName=datasetName, offline=True):
-            size, mtime = sizet
-            extrastuff = ""
-            if mtime is not None:
-                extrastuff = "| mod_time=%f"%float(mtime)
-            if (appendMap is None) or (not appendMap.has_key(dsetName)) or ((filepath, "%d"%size) not in appendMap[dsetName]):
-                print >>output, "%s | %s | %d %s"%(dsetName, filepath, size, extrastuff)
+            self.checksum_client, self.checksum_type = None
+        
+        # Pattern matching %(name)s from esg.ini
+        ini_pat = re.compile(r'%\(([^()]*)\)s')
+        
+        # modify directory_format to python-re compatible version
+        directory_format = self.cfg.get(self.project, 'directory_format', raw=True)
+        
+        pat = directory_format.strip()
+        pat2 = pat.replace('\.','__ESCAPE_DOT__')
+        pat3 = pat2.replace('.', r'\.')
+        pat4 = pat3.replace('__ESCAPE_DOT__', r'\.')
+        pat5 = re.sub(ini_pat, r'(?P<\1>[\w.-]+)', pat4)
+        pat_fin = pat5+'/(?P<filename>[\w.-]+\.nc)'
+        self.pattern = re.compile(pat_fin)
+        
+        self.dtemp = mkdtemp()
 
-    if output is not sys.stdout:
-        output.close()
+def get_args(job):
+    """
+    Returns parsed command-line arguments. See ``esg_mapfiles -h`` for full description.
+    A ``job`` dictionnary can be used as developper's entry point to overload the parser.
 
-def calc_checksum_wrapper(args):
-    return calc_checksum(*args)
+    :param dict job: Optionnal dictionnary instead of command-line arguments.
+    :returns: The corresponding ``argparse`` Namespace
 
-def calc_checksum(filepath, checksum_client):
-    csum = None
-    if os.path.exists(filepath):
-        command = "%s %s"%(checksum_client, filepath)
-        info("Running: %s"%command)
+    """
+    parser = argparse.ArgumentParser(
+        description="""Build ESGF mapfiles upon local ESGF datanode bypassing esgscan_directory command-line.\n\n
+        Exit status:\n
+        [0]: Successful scanning of all files encountered,\n
+        [1]: No valid data files found and no mapfile produced and,\n
+        [2]: A mapfile was produced but some files were skipped.""",
+        formatter_class=RawTextHelpFormatter,
+        add_help=False,
+        epilog="""
+
+
+
+Developed by Levavasseur, G. (CNRS/IPSL)""")
+    parser.add_argument(
+        'directory',
+        type=str,
+        nargs='+',
+        help='One or more directories to recursively scan. Unix wildcards are allowed.')
+    parser.add_argument(
+        '-h', '--help',
+        action="help",
+        help="""Show this help message and exit.\n\n""")
+    parser.add_argument(
+        '-p', '--project',
+        type=str,
+        required=True,
+        help="""Required project name corresponding to a section of the configuration file.\n\n""")
+    parser.add_argument(
+        '-c', '--config',
+        type=str,
+        default='{0}/config.ini'.format(os.path.dirname(os.path.abspath(__file__))),
+        help="""Path of configuration INI file\n(default is {0}/config.ini).\n\n""".format(os.path.dirname(os.path.abspath(__file__))))
+    parser.add_argument(
+        '-o', '--outdir',
+        type=str,
+        default=os.getcwd(),
+        help="""Mapfile(s) output directory\n(default is working directory).\n\n""")
+    parser.add_argument(
+        '-l', '--logdir',
+        type=str,
+        const=os.getcwd(),
+        nargs='?',
+        help="""Logfile directory (default is working directory).\nIf not, standard output is used.\n\n""")
+    parser.add_argument(
+        '-m', '--mapfile',
+        type=str,
+        default='mapfile.txt',
+        help="""Output mapfile name. Only used without --per-dataset option\n(default is 'mapfile.txt').\n\n""")
+    parser.add_argument(
+        '-d', '--per-dataset',
+        action='store_true',
+        default=False,
+        help="""Produces ONE mapfile PER dataset. It takes priority over --mapfile.\n\n""")
+    parser.add_argument(
+        '-L', '--latest',
+        action='store_true',
+        default=False,
+        help="""Generates mapfiles with latest versions only.\n\n""")
+    parser.add_argument(
+        '-w', '--with-version',
+        action='store_true',
+        default=False,
+        help="""Includes DRS version into dataset ID (ESGF 2.x compatibility).\n\n""")
+    parser.add_argument(
+        '-C', '--checksum',
+        action='store_true',
+        default=False,
+        help="""Includes file checksums into mapfiles (default is a SHA256 checksum).\n\n""")
+    parser.add_argument(
+        '-v', '--verbose',
+        action='store_true',
+        default=False,
+        help="""Verbose mode.\n\n""")
+    parser.add_argument(
+        '-V', '--Version',
+        action='version',
+        version='%(prog)s ({0})'.format(__version__),
+        help="""Program version.""")
+    if job is None:
+        return parser.parse_args()
+    else:
+        # SYNDA submits non-latest path to translate
+        return parser.parse_args([re.sub('v[0-9]*$', 'latest', os.path.normpath(job['full_path_variable'])), '-p', 'cmip5', '-c', '/home/esg-user/mapfile.ini',
+                                  '-o', '/home/esg-user/mapfiles/pending/', '-l', 'synda_logger', '-d', '-L', '-C', '-v'])
+
+
+def get_master_ID(attributes, ctx):
+    """
+    Builds the master identifier of a dataset.
+
+    :param dict attributes: The attributes auto-detected with DRS pattern
+    :param dict ctx: The processing context (as a :func:`ProcessingContext` class instance)
+    :returns: The master ID with the version
+    :rtype: *str*
+
+    """
+    dataset_ID = ctx.cfg.get(ctx.project, 'dataset_id', 0, attributes)
+    facets = re.split('\.|#', dataset_ID)
+    for facet in facets:
+        if facet == 'project':
+            dataset_ID = dataset_ID.replace(facet, attributes[facet].lower())
+        # dataset_ID = dataset_ID.replace(facet, attributes[facet])
+    return dataset_ID
+
+
+def check_facets(attributes, ctx, file):
+    """
+    Checks all attributes from path.
+    Each attribute or facet is auto-detected using the DRS pattern (regex) and compared to its corresponding options declared into the configuration file.
+
+    :param dict attributes: The attributes auto-detected with DRS pattern
+    :param dict ctx: The processing context (as a :func:`ProcessingContext` class instance)
+    :raises Error: If an option of an attribute is not declared
+
+    """
+    for facet in attributes.keys():
+        if not facet in ['project', 'filename', 'variable', 'root', 'version', 'ensemble']:
+            options = ctx.cfg.get(ctx.project, '{0}_options'.format(facet)).replace(" ", "").split(',')
+            if not attributes[facet] in options:
+                raise Exception('"{0}" is missing in "{1}_options" of the "{2}" section from the configuration file to properly process {3}'
+                    .format(attributes[facet], facet, ctx.project, file))
+
+
+def checksum(file, checksum_type, checksum_client):
+    """
+    Does the checksum by the Shell avoiding Python memory limits.
+
+    :param str file: The full path of a file
+    :param dict ctx: The processing context (as a :func:`ProcessingContext` class instance)
+    :raises Error: If the checksum fails
+
+    """
+    try:
+        shell = os.popen("{0} {1} | awk -F ' ' '{{ print $1 }}'".format(checksum_client, file), 'r')
+        return shell.readline()[:-1]
+    except:
+        raise Exception('{0} checksum failed for {1}'.format(checksum_type, file))
+
+   
+def rmdtemp(ctx):
+    """
+    Removes the temporary directory and its content.
+
+    :param dict ctx: The processing context (as a :func:`ProcessingContext` class instance)
+
+    """
+    if ctx.verbose:
+        logging.warning('Delete temporary directory {0}'.format(ctx.dtemp))
+    rmtree(ctx.dtemp)
+
+
+def yield_inputs(ctx):
+    """
+    Yields all files to process within tuples with the processing context.
+    The file walking through the DRS tree follows symbolic links and ignores the "files" directories and "latest" symbolic links if ``--latest`` is None.
+
+    :param dict ctx: The processing context (as a :func:`ProcessingContext` class instance)
+    :returns: Attach the processing context to a file to process as an iterator of tuples
+    :rtype: *iter*
+
+    """
+    for directory in ctx.directory:
+        for root, dirs, files in os.walk(directory, followlinks=True):
+            if '/files' not in root:
+                if not ctx.latest:
+                    if '/latest' not in root:
+                        for file in files:
+                            yield os.path.join(root, file), ctx
+                else:
+                    if not re.compile('/v[0-9]*').search(root):
+                        for file in files:
+                            yield os.path.join(root, file), ctx
+
+
+def write(outfile, msg):
+    """
+    Writes in a mapfile using the ``with`` statement.
+
+    :param str outfile: The mapfile full path
+    :param str msg: The line to write
+
+    """
+    with open(outfile, 'a+') as f:
+        f.write(msg)
+
+
+def wrapper(inputs):
+    """
+    Transparent wrapper for pool map.
+
+    :param tuple inputs: A tuple with the file path and the processing context
+    :returns: The :func:`_file_process` call
+    :rtype: *callable*
+
+    """
+    # Extract inputs from tuple
+    file, ctx = inputs
+    try:
+        return file_process(inputs)
+    except:
+        if not ctx.verbose:
+            logging.warning('{0} skipped'.format(inputs[0]))
+        else:
+            logging.exception('A thread-process fails:')
+        return None
+
+
+def counted(fct):
+    """
+    Decorator used to count all file process calls.
+
+    :param callable fct: The function to monitor
+    :returns: A wrapped function with a ``.called`` attribute
+    :rtype: *callable*
+
+    """
+    @wraps(fct)  # Convenience decorator to keep the file_process docstring
+    def wrapper(*args, **kwargs):
+        wrapper.called += 1
+        return fct(*args, **kwargs)
+    wrapper.called = 0
+    wrapper.__name__ = fct.__name__
+    return wrapper
+
+
+@counted
+def file_process(inputs):
+    """
+    file_process(inputs)
+
+    File process that\:
+     * Auto-detects facets,
+     * Builds dataset ID,
+     * Does checksums,
+     * Writes to appropriate mapfile.
+
+    :param tuple inputs: A tuple with the file path and the processing context
+    :return: The output mapfile name
+    :rtype: *str*
+
+    """
+    # Extract inputs from tuple
+    file, ctx = inputs
+    # Matching file full path with corresponding project pattern to get all attributes
+    try:
+        attributes = re.match(ctx.pattern, file).groupdict()
+    except:
+        # Fails can be due to:
+        # -> Wrong project argument
+        # -> Mistake in directory_format pattern in configuration file
+        # -> Wrong version format (defined as one or more digit after 'v')
+        # -> Wrong ensemble format (defined as r[0-9]i[0-9]p[0-9])
+        # -> Mistake in the DRS tree of your filesystem.
+        raise Exception('The "directory_format" regex cannot match {0}'.format(file))
+    else:
+        # Control vocabulary of each facet
+        # check_facets(attributes, ctx, file) # TODO
+        # Deduce master ID from full path and --latest option
+        if ctx.with_version:
+            if ctx.latest:
+                master_ID = get_master_ID(attributes, ctx).replace(attributes['version'], os.path.basename(os.path.realpath(''.join(re.split(r'(latest)', file)[:-1])))[1:])
+            else:
+                master_ID = get_master_ID(attributes, ctx).replace(attributes['version'], attributes['version'][1:])
+        else:
+            master_ID = get_master_ID(attributes, ctx).replace('#' + attributes['version'], '')
+
+        # Retrieve size and modification time
+        (mode, ino, dev, nlink, uid, gid, size, atime, mtime, ctime) = os.stat(file)
+        # Make the file checksum (MD5)
+        if ctx.checksum_client:
+            csum = checksum(file, ctx.checksum_type, ctx.checksum_client)
+        # Build mapfile name if one per dataset, or read the supplied name instead
+        if ctx.dataset:
+            outmap = '{0}{1}{2}'.format(master_ID.split('#')[0], '.', attributes['version'])
+        else:
+            outmap = ctx.outmap
+        outfile = os.path.join(ctx.dtemp, outmap)
+        # Generate a lockfile to avoid that several threads write on the same file at the same time
+        # LockFile is acquired and released after writing.
+        # Acquiring LockFile is timeouted if it's locked by other thread.
+        # Each process adds one line to the appropriate mapfile
+        lock = LockFile(outfile)
         try:
-            f = os.popen(command).read()
-            csum = f.split(' ')[0]
-        except:
-            error("Error running command '%s', check configuration option 'checksum'."%command)
-           
-    return filepath, csum
+            lock.acquire(timeout=int(ctx.cfg.defaults()['lockfile_timeout']))
+            if ctx.checksum_type:
+                write(outfile, '{0} | {1} | {2} | mod_time={3} | checksum={4} | checksum_type={5}\n'.format(master_ID, file, size, str(mtime)+'.000000', csum, ctx.checksum_type))
+            else:
+                write(outfile, '{0} | {1} | {2} | mod_time={3}\n'.format(master_ID, file, size, str(mtime)+'.000000'))
+            lock.release()
+        except LockFailed:
+            raise Exception('Failed to lock file: {0}'.format(outfile))
+        except LockTimeout:
+            raise Exception('Timeout exceeded for {0}'.format(file))
+        logging.info('{0} <-- {1}'.format(outmap, file))
+        # Return mapfile name
+        return outmap
 
-if __name__=='__main__':
-    main(sys.argv[1:])
+
+def run(job=None):
+    """
+    Main process that\:
+     * Instantiates processing context,
+     * Creates mapfiles output directory if necessary,
+     * Instantiates threads pools,
+     * Copies mapfile(s) to the output directory,
+     * Removes the temporary directory and its contents.
+     * Implement exit status values as described in get_args (search for 'epilog')
+
+    :param dict job: A job from SYNDA if supplied instead of classical command-line use.
+
+    """
+    # Instanciate processing context from command-line arguments or SYNDA job dictionnary
+    ctx = ProcessingContext(get_args(job))
+    logging.info('==> Scan started')
+    # Create output directory if not exists
+    if not os.path.isdir(ctx.outdir):
+        if ctx.verbose:
+            logging.warning('Create output directory: {0}'.format(ctx.outdir))
+        os.makedirs(ctx.outdir)
+    # Start threads pool over files list in supplied directory
+    pool = ThreadPool(int(ctx.cfg.defaults()['threads_number']))
+    # Return the list of generated mapfiles in temporary directory
+    outmaps_all = [x for x in pool.imap(wrapper, yield_inputs(ctx))]
+    outmaps = filter(lambda m: m is not None, outmaps_all)
+    # Close threads pool
+    pool.close()
+    pool.join()
+    # Raises exception when all processed files failed (filtered list empty)
+    if not outmaps:
+        rmdtemp(ctx)
+        raise Exception('All files have been ignored or have failed leading to no mapfile.')
+    # Overwrite each existing mapfile in output directory
+    for outmap in list(set(outmaps)):
+        copy2(os.path.join(ctx.dtemp, outmap), ctx.outdir)
+    # Remove temporary directory
+    rmdtemp(ctx)
+    logging.info('==> Scan completed ({0} file(s) scanned)'.format(file_process.called))
+    # Non-zero exit status if any files got filtered
+    if None in outmaps_all:
+        logging.warning('==> Scan completed ({0} file(s) skipped)'.format(len(outmaps_all) - len(outmaps)))
+        sys.exit(2)
+
+
+# Main entry point for stand-alone call.
+if __name__ == "__main__":
+    run()

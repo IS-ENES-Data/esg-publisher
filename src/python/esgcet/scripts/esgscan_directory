@@ -10,7 +10,7 @@ import os
 import re
 import argparse
 import logging
-from esgcet.esgscan.esgmapfilesutils import init_logging, check_directory, config_parse, split_line
+from esgcet.esgscan.esgmapfilesutils import init_logging, check_directory, config_parse, split_line, split_record, split_map
 from multiprocessing.dummy import Pool as ThreadPool
 from functools import wraps
 from argparse import RawTextHelpFormatter
@@ -72,8 +72,8 @@ class ProcessingContext(object):
         self.with_version = args.with_version
         self.dataset = args.per_dataset
         self.cfg = config_parse(args.config)
-        self.project = 'project:' + args.project
-        if not self.project in self.cfg.sections():
+        self.project_section = 'project:' + args.project
+        if not self.project_section in self.cfg.sections():
             raise Exception('No section in configuration file corresponds to "{0}" project. Supported projects are {1}.'.format(args.project, self.cfg.sections()))
         
         line = self.cfg.defaults()['checksum']
@@ -86,7 +86,7 @@ class ProcessingContext(object):
         ini_pat = re.compile(r'%\(([^()]*)\)s')
         
         # modify directory_format to python-re compatible version
-        directory_format = self.cfg.get(self.project, 'directory_format', raw=True)
+        directory_format = self.cfg.get(self.project_section, 'directory_format', raw=True)
         
         pat = directory_format.strip()
         pat2 = pat.replace('\.','__ESCAPE_DOT__')
@@ -203,7 +203,7 @@ def get_master_ID(attributes, ctx):
     :rtype: *str*
 
     """
-    dataset_ID = ctx.cfg.get(ctx.project, 'dataset_id', 0, attributes)
+    dataset_ID = ctx.cfg.get(ctx.project_section, 'dataset_id', 0, attributes)
     facets = re.split('\.|#', dataset_ID)
     for facet in facets:
         if facet == 'project':
@@ -222,12 +222,33 @@ def check_facets(attributes, ctx, file):
     :raises Error: If an option of an attribute is not declared
 
     """
+    maps = ctx.cfg.get(ctx.project_section, 'maps').replace(" ", "").split(',')
     for facet in attributes.keys():
         if not facet in ['project', 'filename', 'variable', 'root', 'version', 'ensemble']:
-            options = ctx.cfg.get(ctx.project, '{0}_options'.format(facet)).replace(" ", "").split(',')
-            if not attributes[facet] in options:
-                raise Exception('"{0}" is missing in "{1}_options" of the "{2}" section from the configuration file to properly process {3}'
-                    .format(attributes[facet], facet, ctx.project, file))
+            if ctx.cfg.has_option(ctx.project_section, '{0}_map'.format(facet)) or ctx.cfg.has_option(ctx.project_section, '{0}_options'.format(facet)):
+                # options following the "map" format in the configuration file
+                if '{0}_map'.format(facet) in maps:
+                    from_keys, to_keys, value_map = split_map(ctx.cfg.get(ctx.project_section, '{0}_map'.format(facet)))
+                    if facet in to_keys:
+                        pos = to_keys.index(facet)
+                        options = set(zip(*value_map.values())[pos])
+                    else:
+                        msg = 'Option "{0}_map" is missing in the configuration file'.format(facet)
+                        logging.warning(msg)
+                        raise Exception(msg)
+                # experiment_options follows the form "<project> | <experiment> | <long_name>" => needs special treatment
+                elif facet == 'experiment':
+                    experiment_options = split_record(ctx.cfg.get(ctx.project_section, '{0}_options'.format(facet)))
+                    options = zip(*experiment_options)[1]
+                else:
+                    options = ctx.cfg.get(ctx.project_section, '{0}_options'.format(facet)).replace(" ", "").split(',')
+                if not attributes[facet] in options:
+                    msg = '"{0}" is missing in "{1}_options" of the "{2}" section from the configuration file to properly process {3}'.format(attributes[facet], facet, ctx.project_section, file)
+                    logging.warning(msg)
+                    raise Exception(msg)
+            else:  # TODO model_options not in esg.ini but in esgcet_models_table
+                msg = 'No option for facet "{0}" in the configuration file'.format(facet)
+                logging.warning(msg)                
 
 
 def checksum(file, checksum_type, checksum_client):
@@ -363,15 +384,17 @@ def file_process(inputs):
         raise Exception('The "directory_format" regex cannot match {0}'.format(file))
     else:
         # Control vocabulary of each facet
-        # check_facets(attributes, ctx, file) # TODO
+        check_facets(attributes, ctx, file)
+            
         # Deduce master ID from full path and --latest option
+        master_ID = get_master_ID(attributes, ctx)
+        
+        # add version number to master_ID
         if ctx.with_version:
             if ctx.latest:
-                master_ID = get_master_ID(attributes, ctx).replace(attributes['version'], os.path.basename(os.path.realpath(''.join(re.split(r'(latest)', file)[:-1])))[1:])
+                master_ID = '{0}#{1}'.format(master_ID, os.path.basename(os.path.realpath(''.join(re.split(r'(latest)', file)[:-1])))[1:])
             else:
-                master_ID = get_master_ID(attributes, ctx).replace(attributes['version'], attributes['version'][1:])
-        else:
-            master_ID = get_master_ID(attributes, ctx).replace('#' + attributes['version'], '')
+                master_ID = '{0}#{1}'.format(master_ID, attributes['version'][1:])
 
         # Retrieve size and modification time
         (mode, ino, dev, nlink, uid, gid, size, atime, mtime, ctime) = os.stat(file)

@@ -44,7 +44,6 @@ def esgpublishWrapper(**kw):
     masterGateway = kw.get("masterGateway", None)
     message = kw.get("message", None)
     offline = kw.get("offline", False)
-    parent = kw.get("parent", None)
     perVariable = kw.get("perVariable", None)
     projectName = kw.get("projectName", None)
     properties = kw.get("properties", {})
@@ -143,7 +142,7 @@ def esgpublishWrapper(**kw):
     if not publishOnly:
         datasets = iterateOverDatasets(projectName, dmap, directoryMap, datasetNames, Session, aggregateDimension, publishOp, filefilt, initcontext, offline, properties, keepVersion=keepVersion, newVersion=version, extraFields=extraFields, masterGateway=masterGateway, comment=message, readFiles=readFiles)
 
-    result = publishDatasetList(datasetNames, Session, publish=publish, thredds=thredds, las=las, parentId=parent, service=service, perVariable=perVariable, threddsCatalogDictionary=threddsCatalogDictionary, reinitThredds=reinitThredds, readFromCatalog=readFromCatalog)
+    result = publishDatasetList(datasetNames, Session, publish=publish, thredds=thredds, las=las, service=service, perVariable=perVariable, threddsCatalogDictionary=threddsCatalogDictionary, reinitThredds=reinitThredds, readFromCatalog=readFromCatalog)
 
     return result
 

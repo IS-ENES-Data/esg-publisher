@@ -827,19 +827,6 @@ class ProjectHandler(object):
 
         return context
 
-    def getParentId(self, datasetName):
-        """Get the parent ID of a dataset. This is a no-op, since the P2P system
-        does not support hierarchical datasets.
-
-        Returns the string parent identifier.
-
-        datasetName
-          String dataset identifier.
-        """
-
-        parentId = 'ROOT'
-        return parentId
-
     def readContext(self, sdfile, **kw):
         """Get a dictionary of key/value pairs from an open file.
 

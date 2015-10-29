@@ -46,14 +46,11 @@ class RestPublicationService(object):
         self.status = 0
         self.message = ''
 
-    def createDataset(self, parentId, threddsURL, resursionLevel, status, schema=None):
+    def createDataset(self, to_delete, threddsURL, resursionLevel, status, schema=None):
         """
         Legacy dataset creation.
 
         Return 'SUCCESSFUL' if the operation succeeded.
-
-        parentId
-          String parent dataset identifier (ignored).
 
         threddsURL
           String URL of the THREDDS catalog to be harvested.

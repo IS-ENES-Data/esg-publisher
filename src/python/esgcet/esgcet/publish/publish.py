@@ -70,7 +70,7 @@ class PublicationStatus(object):
     def getStateItem(self):
         return self.state
 
-def publishDataset(datasetName, parentId, service, threddsRootURL, session, schema=None):
+def publishDataset(datasetName, service, threddsRootURL, session, schema=None):
     """
     Publish a dataset.
 
@@ -82,10 +82,6 @@ def publishDataset(datasetName, parentId, service, threddsRootURL, session, sche
 
     datasetName
       String dataset identifier.
-
-    parentId
-      String persistent identifier of the parent of this dataset. This defines the top-level
-      of the hierarchy into which this dataset will be published.
 
     service
       Hessian proxy web service
@@ -120,9 +116,9 @@ def publishDataset(datasetName, parentId, service, threddsRootURL, session, sche
     try:
         # messaging.info("  Call createDataset ...")
         if schema is not None:
-            statusId = service.createDataset(parentId, threddsURL, -1, "Published", schema=schema)
+            statusId = service.createDataset('', threddsURL, -1, "Published", schema=schema) # TODO remove first argument in esg-search and rest.py
         else:
-            statusId = service.createDataset(parentId, threddsURL, -1, "Published")
+            statusId = service.createDataset('', threddsURL, -1, "Published") # TODO remove first argument in esg-search and rest.py
         # messaging.info("  Call complete.")
     except socket.error, e:
         raise ESGPublishError("Socket error: %s\nIs the proxy certificate %s valid?"%(`e`, service._cert_file))
@@ -153,7 +149,7 @@ def publishDataset(datasetName, parentId, service, threddsRootURL, session, sche
 
     return dset, statusId, state, event.event, status
 
-def publishDatasetList(datasetNames, Session, parentId=None, handlerDictionary=None, publish=True, thredds=True, las=False, progressCallback=None, service=None, perVariable=None, threddsCatalogDictionary=None, reinitThredds=None, readFromCatalog=False, restInterface=False, schema=None):
+def publishDatasetList(datasetNames, Session, handlerDictionary=None, publish=True, thredds=True, las=False, progressCallback=None, service=None, perVariable=None, threddsCatalogDictionary=None, reinitThredds=None, readFromCatalog=False, restInterface=False, schema=None):
     """
     Publish a list of datasets:
 
@@ -169,13 +165,6 @@ def publishDatasetList(datasetNames, Session, parentId=None, handlerDictionary=N
 
     Session
       A database Session.
-
-    parentId
-      The string (or dictionary) persistent identifier of the parent of the datasets. If None (the default),
-      the parent id for each dataset is generated from ``handler.getParentId()``. If a dictionary, each
-      dataset name is used as a key to lookup the respective parent id. If a string, the parent id is
-      set to the string for all datasets being published. This function
-      can be overridden in the project handler to implement a project-specific dataset hierarchy.
 
     handlerDictionary
       A dictionary mapping dataset_name => handler.
@@ -322,14 +311,8 @@ def publishDatasetList(datasetNames, Session, parentId=None, handlerDictionary=N
         n = spi * lenresults
         j = 0
         for datasetName,versionno in datasetNames:
-            if parentId is None:
-                parentIdent = handler.getParentId(datasetName)
-            elif type(parentId)==type({}):
-                parentIdent = parentId[datasetName]
-            else:
-                parentIdent = parentId
             messaging.info("Publishing: %s"%datasetName)
-            dset, statusId, state, evname, status = publishDataset(datasetName, parentIdent, service, threddsRootURL, session, schema=schema)
+            dset, statusId, state, evname, status = publishDataset(datasetName, service, threddsRootURL, session, schema=schema)
             messaging.info("  Result: %s"%status.getStateItem())
             results.append((dset, statusId, state))
             resultDict[(datasetName,versionno)] = evname

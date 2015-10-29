@@ -1,4 +1,4 @@
-#!/usr/local/uvcdat/1.5.0/bin/python
+#!/usr/bin/env python
 
 import sys
 import logging
@@ -115,11 +115,6 @@ Options:
 
         Note: the property must also be configured in the initialization file
         and project handler.
-
-    --parent parent_id:
-        DEPRECATED: The P2P system does not support hierarchical datasets. This option is ignored.
-        Name of the parent dataset of ALL the datasets. If not specified, the parent identifier is generated
-        for each dataset from the parent_id option of the initialization file. Use this option with caution.
 
     --per-time
     --per-variable
@@ -277,7 +272,7 @@ def getDatasetUpdate(filename, session):
 def main(argv):
 
     try:
-        args, lastargs = getopt.getopt(argv, "a:cdehi:m:p:ru", ['append', 'create', 'dataset=', 'delete-files', 'echo-sql', 'experiment=', 'filter=', 'help', 'keep-version', 'log=', 'map=', 'message=', 'model=', 'offline',  'parent=', 'per-time', 'per-variable', 'project=', 'property=', 'publish', 'new-version=', 'no-thredds-reinit', 'noscan', 'read-directories', 'read-files', 'rename-files', 'replace', 'replica=', 'rest-api', 'service=', 'set-replica', 'summarize-errors', 'thredds', 'thredds-reinit', 'update', 'use-existing=', 'use-list=', 'validate=', 'version-list=', 'nodbwrite'])
+        args, lastargs = getopt.getopt(argv, "a:cdehi:m:p:ru", ['append', 'create', 'dataset=', 'delete-files', 'echo-sql', 'experiment=', 'filter=', 'help', 'keep-version', 'log=', 'map=', 'message=', 'model=', 'offline', 'per-time', 'per-variable', 'project=', 'property=', 'publish', 'new-version=', 'no-thredds-reinit', 'noscan', 'read-directories', 'read-files', 'rename-files', 'replace', 'replica=', 'rest-api', 'service=', 'set-replica', 'summarize-errors', 'thredds', 'thredds-reinit', 'update', 'use-existing=', 'use-list=', 'validate=', 'version-list=', 'nodbwrite'])
     except getopt.error:
         print sys.exc_value
         print usage
@@ -297,7 +292,6 @@ def main(argv):
     masterGateway = None
     message = None
     offline = False
-    parent = None
     perVariable = None
 
     projectName = None
@@ -368,8 +362,6 @@ def main(argv):
             publishOnly = True
         elif flag=='--offline':
             offline = True
-        elif flag=='--parent':
-            parent = arg
         elif flag=='--per-time':
             perVariable = False
         elif flag=='--per-variable':
@@ -466,7 +458,7 @@ def main(argv):
 #    datasets = iterateOverDatasets(projectName, dmap, directoryMap, datasetNames, Session, aggregateDimension, publishOp, filefilt, initcontext, offline, properties, keepVersion=keepVersion, newVersion=version, extraFields=extraFields, masterGateway=masterGateway, comment=message, readFiles=readFiles, nodbwrite=nodbwrite)
 
 
-    result = publishDatasetList(datasetNames, Session, publish=publish, thredds=thredds, las=las, parentId=parent, service=service, perVariable=perVariable, reinitThredds=threddsReinit, restInterface=restApi, schema=schema)
+    result = publishDatasetList(datasetNames, Session, publish=publish, thredds=thredds, las=las, service=service, perVariable=perVariable, reinitThredds=threddsReinit, restInterface=restApi, schema=schema)
 
     # print `result`
 

@@ -85,7 +85,6 @@ setup(
                'scripts/esglist_files',
                'scripts/esgsetup',
                'scripts/esgpublish',
-               'scripts/esgquery_gateway',
                'scripts/esgquery_index',
                'scripts/esgunpublish',
                'scripts/esgupdate_metadata',

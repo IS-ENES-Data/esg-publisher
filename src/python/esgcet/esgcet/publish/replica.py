@@ -90,7 +90,7 @@ def generateReplicaThreddsCatalog(mapfile, operation, sourceCatalogDictionary, s
     esgpublishWrapper(datasetMapfile=mapfile, publishOp=operation, masterGateway=sourceGateway, datasetName=datasetId, offline=offline, service=service, message=comment, thredds=True, las=False, publish=False, threddsCatalogDictionary=resultThreddsDictionary, version=version, reinitThredds=False, projectName=project, readFiles=readFiles)
     return resultThreddsDictionary
 
-def publishCatalogs(threddsCatalogDictionary, parentDatasetIdDictionary, thredds=True, las=True, publish=True):
+def publishCatalogs(threddsCatalogDictionary, thredds=True, las=True, publish=True):
     """
     Add one or more THREDDS catalogs to the THREDDS catalog directory, reinitialize THREDDS, and publish the catalogs to the gateway.
 
@@ -98,9 +98,6 @@ def publishCatalogs(threddsCatalogDictionary, parentDatasetIdDictionary, thredds
 
     threddsCatalogDictionary
       Dictionary of THREDDS catalogs, as returned from ``generateReplicaThreddsCatalog``. The dictionary maps datasetId => String THREDDS catalog.
-
-    parentDatasetIdDictionary
-      Dictionary mapping datasetId => parent dataset identifier in the gateway hierarchy.
 
     thredds=True
       Boolean flag. If True, copy the catalogs to the THREDDS catalog directory and reinitialize the TDS server.
@@ -119,6 +116,6 @@ def publishCatalogs(threddsCatalogDictionary, parentDatasetIdDictionary, thredds
     registerHandlers()
 
     datasetNames = threddsCatalogDictionary.keys()
-    result = publishDatasetList(datasetNames, Session, publish=publish, thredds=thredds, las=las, parentId=parentDatasetIdDictionary, threddsCatalogDictionary=threddsCatalogDictionary, reinitThredds=None, readFromCatalog=True)
+    result = publishDatasetList(datasetNames, Session, publish=publish, thredds=thredds, las=las, threddsCatalogDictionary=threddsCatalogDictionary, reinitThredds=None, readFromCatalog=True)
     return result
 

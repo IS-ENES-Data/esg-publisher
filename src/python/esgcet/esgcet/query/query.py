@@ -162,13 +162,6 @@ def getDerived(dset, dsetVersion, derivedHeaders, handler):
     for attname in derivedHeaders:
         if attname=='version':
             value = str(dsetVersion.version)
-        elif attname=='parent':
-            dsetname = dset.name
-            try:
-                value  = handler.getParentId(dsetname)
-            except:
-                warning("Cannot determine parent id for dataset %s"%dsetname)
-                value = ''
         elif attname=='version_name':
             value = dsetVersion.name
         elif attname=='comment':
@@ -205,7 +198,7 @@ def getQueryFields(handler, return_list=True):
         * *basicFields* apply to all datasets;
         * *eventFields* are events associated with the dataset;
         * *categories* are the handler-specific categories.
-        * *derivedFields* are fields such as *parent*, derived from other objects.
+        * *derivedFields* are fields such as *version*, derived from other objects.
 
     listall:
       Boolean, if True include DatasetVersion headers
@@ -213,7 +206,7 @@ def getQueryFields(handler, return_list=True):
     
     basicHeaders = ['id', 'name', 'project', 'model', 'experiment', 'run_name', 'offline', 'master_gateway']
     eventHeaders = ['publish_time', 'publish_status']
-    derivedHeaders = ['parent', 'version', 'version_name', 'comment']
+    derivedHeaders = ['version', 'version_name', 'comment']
     categories = handler.getFieldNames()
     if return_list:
         allProperties = list(set(basicHeaders+categories+eventHeaders+derivedHeaders))

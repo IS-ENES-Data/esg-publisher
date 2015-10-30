@@ -10,7 +10,7 @@ import re
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from esgcet.publish import extractFromDataset, aggregateVariables, filelistIterator, fnmatchIterator, fnIterator, directoryIterator, multiDirectoryIterator, progressCallback, StopEvent, readDatasetMap, datasetMapIterator, iterateOverDatasets, publishDatasetList, processIterator, processNodeMatchIterator, CREATE_OP, DELETE_OP, RENAME_OP, UPDATE_OP, REPLACE_OP
+from esgcet.publish import extractFromDataset, aggregateVariables, filelistIterator, fnmatchIterator, fnIterator, directoryIterator, multiDirectoryIterator, progressCallback, StopEvent, readDatasetMap, datasetMapIterator, iterateOverDatasets, publishDatasetList, processIterator, processNodeMatchIterator, CREATE_OP, DELETE_OP, UPDATE_OP, REPLACE_OP
 from esgcet.config import loadConfig, getHandler, getHandlerByName, initLogging, registerHandlers, splitLine, getOfflineLister
 from esgcet.exceptions import *
 from esgcet.messaging import debug, info, warning, error, critical, exception
@@ -38,7 +38,6 @@ Arguments:
         --replace
         --update
         --delete-files
-        --rename-files
 
 Options:
 
@@ -144,12 +143,6 @@ Options:
         directory with the config file option 'directory_format'.  See
         --read-directories and Notes.
 
-    --rename-files
-        Rename one or more files in a dataset. The --map form of the command must be used, and each
-        line of the dataset map should have the form:
-
-            dataset_id | to_file | size_in_bytes  | *from_file*=path
-
     -r, --replace
         Replace the dataset. If the dataset exists, all file entries not in the 'new' dataset are removed,
         existing files are replaced, and new files are added. If the dataset does not exist, the operation
@@ -245,7 +238,7 @@ Examples:
 def main(argv):
 
     try:
-        args, lastargs = getopt.getopt(argv, "a:cdehi:m:p:ru", ['append', 'create', 'dataset=', 'delete-files', 'echo-sql', 'experiment=', 'filter=', 'help', 'keep-version', 'log=', 'map=', 'message=', 'model=', 'offline', 'per-time', 'per-variable', 'project=', 'property=', 'publish', 'new-version=', 'no-thredds-reinit', 'noscan', 'read-directories', 'read-files', 'rename-files', 'replace', 'rest-api', 'service=', 'set-replica', 'summarize-errors', 'thredds', 'thredds-reinit', 'update', 'use-existing=', 'use-list=', 'validate=', 'version-list=', 'nodbwrite'])
+        args, lastargs = getopt.getopt(argv, "a:cdehi:m:p:ru", ['append', 'create', 'dataset=', 'delete-files', 'echo-sql', 'experiment=', 'filter=', 'help', 'keep-version', 'log=', 'map=', 'message=', 'model=', 'offline', 'per-time', 'per-variable', 'project=', 'property=', 'publish', 'new-version=', 'no-thredds-reinit', 'noscan', 'read-directories', 'read-files', 'replace', 'rest-api', 'service=', 'set-replica', 'summarize-errors', 'thredds', 'thredds-reinit', 'update', 'use-existing=', 'use-list=', 'validate=', 'version-list=', 'nodbwrite'])
     except getopt.error:
         print sys.exc_value
         print usage
@@ -346,8 +339,6 @@ def main(argv):
             readFiles = False
         elif flag=='--read-files':
             readFiles = True
-        elif flag=='--rename-files':
-            publishOp = RENAME_OP
         elif flag in ['-r', '--replace']:
             publishOp = REPLACE_OP
         elif flag=='--rest-api':

@@ -600,7 +600,7 @@ def iterateOverDatasets(projectName, dmap, directoryMap, datasetNames, Session, 
       Name of the dimension on which to aggregate the datasets.
 
     operation
-      The publication operation, one of esgcet.publish.CREATE_OP, DELETE_OP, RENAME_OP, UPDATE_OP
+      The publication operation, one of esgcet.publish.CREATE_OP, DELETE_OP, UPDATE_OP
 
     filefilt
       String regular expression as defined by the Python re module. If a ``directoryMap`` is specified, only files whose

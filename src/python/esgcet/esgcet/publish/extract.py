@@ -15,7 +15,6 @@ SEQ=2
 
 CREATE_OP=1
 DELETE_OP=2
-RENAME_OP=3
 UPDATE_OP=4
 REPLACE_OP=5
 
@@ -58,7 +57,7 @@ def extractFromDataset(datasetName, fileIterator, dbSession, handler, cfHandler,
       Boolean, True if the files are offline, cannot be scanned.
 
     operation
-      Publication operation, one of CREATE_OP, DELETE_OP, RENAME_OP, UPDATE_OP
+      Publication operation, one of CREATE_OP, DELETE_OP, UPDATE_OP
 
     progressCallback
       Tuple (callback, initial, final) where ``callback`` is a function of the form ``callback(progress)``, ``initial`` is the initial value reported, ``final`` is the final value reported.
@@ -134,7 +133,7 @@ def extractFromDataset(datasetName, fileIterator, dbSession, handler, cfHandler,
     else:
         if operation in [UPDATE_OP, REPLACE_OP]:
             operation = CREATE_OP
-        elif operation in [DELETE_OP, RENAME_OP]:
+        elif operation in [DELETE_OP]:
             raise ESGPublishError("No such dataset: %s"%datasetName)
 
     # Cannot add online files to offline dataset, and vice versa
@@ -183,14 +182,6 @@ def extractFromDataset(datasetName, fileIterator, dbSession, handler, cfHandler,
         existingVersion = dset.getVersion()
         eventFlag = UPDATE_DATASET_EVENT
         addNewVersion, fobjs = updateDatasetVersion(dset, versionObj, pathlist, session, handler, cfHandler, configOptions, aggregateDimensionName=aggregateDimensionName, offline=offline, progressCallback=progressCallback, stopEvent=stopEvent, extraFields=extraFields, replace=(operation==REPLACE_OP), forceRescan=forceRescan, useVersion=useVersion, **context)
-         
-    elif operation==RENAME_OP:
-        versionObj = dset.getVersionObj(useVersion)
-        if versionObj is None:
-            raise ESGPublishError("Version %d of dataset %s not found, cannot republish."%(useVersion, dset.name))
-        existingVersion = dset.getVersion()
-        eventFlag = UPDATE_DATASET_EVENT
-        addNewVersion = renameFilesVersion(dset, versionObj, pathlist, session, cfHandler, configOptions, aggregateDimensionName=aggregateDimensionName, offline=offline, progressCallback=progressCallback, stopEvent=stopEvent, extraFields=extraFields, **context)
          
     elif operation==DELETE_OP:
         versionObj = dset.getVersionObj(useVersion)
@@ -460,63 +451,6 @@ def updateDatasetVersion(dset, dsetVersion, pathlist, session, handler, cfHandle
     createNewDatasetVersion = haveLatestDsetVersion and fileModified
     
     return createNewDatasetVersion, newFileVersionObjs
-
-def renameFilesVersion(dset, dsetVersion, pathlist, session, cfHandler, configOptions, aggregateDimensionName=None, offline=False, progressCallback=None, stopEvent=None, keepVersion=False, newVersion=None, extraFields=None, **context):
-
-    info("Renaming files in dataset: %s, version %d"%(dset.name, dsetVersion.version))
-
-    # Get the list of FileVersion objects for this version
-    locdict = {}
-    todelete = {}
-    for fobj in dsetVersion.getFileVersions():
-        loc = fobj.location
-        locdict[loc] = todelete[loc] = fobj
-
-    basedict = dset.getBaseDictionary()
-
-    nfiles = len(pathlist)
-
-    varlocate = configOptions['variable_locate']
-    seq = 0
-    for path, size in pathlist:
-
-        # If the file exists, rename it
-        oldpath = None
-        if extraFields is not None:
-            oldpath = extraFieldsGet(extraFields, (dset.name, path, 'from_file'), dsetVersion)
-        if oldpath is None:
-            info("No from_file field for file %s, skipping"%path)
-            continue
-
-        if locdict.has_key(oldpath):
-            fileVersionObj = locdict[oldpath]
-            fileObj = fileVersionObj.parent
-            if not os.path.exists(path):
-                info("File not found: %s, skipping"%path)
-                continue
-            info("Renaming %s to %s"%(oldpath, path))
-            del basedict[fileObj.base]
-            base = generateFileBase(path, basedict, dset.name)
-            fileObj.base = base
-            basedict[base] = 1
-            fileVersionObj.location = path
-            del locdict[oldpath]
-            locdict[path] = fileVersionObj
-        else:
-            info("File entry %s not found, skipping"%oldpath)
-            continue
-
-        seq += 1
-
-        # Callback progress
-        try:
-            issueCallback(progressCallback, seq, nfiles, 0, 1, stopEvent=stopEvent)
-        except:
-            session.rollback()
-            session.close()
-            raise
-
-    return False
 
 def deleteFilesVersion(dset, dsetVersion, pathlist, session, cfHandler, configOptions, aggregateDimensionName=None, offline=False, progressCallback=None, stopEvent=None, extraFields=None, **context):
 

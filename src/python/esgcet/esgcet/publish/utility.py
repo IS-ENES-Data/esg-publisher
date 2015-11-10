@@ -600,7 +600,7 @@ def iterateOverDatasets(projectName, dmap, directoryMap, datasetNames, Session, 
       Name of the dimension on which to aggregate the datasets.
 
     operation
-      The publication operation, one of esgcet.publish.CREATE_OP, DELETE_OP, UPDATE_OP
+      The publication operation, one of esgcet.publish.CREATE_OP
 
     filefilt
       String regular expression as defined by the Python re module. If a ``directoryMap`` is specified, only files whose
@@ -765,9 +765,6 @@ def iterateOverDatasets(projectName, dmap, directoryMap, datasetNames, Session, 
         # If republishing an existing version, only aggregate if online and no variables exist (yet) for the dataset.
 
         runAggregate = (not offline)
-        if hasattr(dataset, 'reaggregate'):
-            runAggregate = (runAggregate and dataset.reaggregate)
-        runAggregate = runAggregate or forceAggregate
 
         if testProgress2 is not None:
            testProgress2[1] = (100./ct)*iloop + 50./ct

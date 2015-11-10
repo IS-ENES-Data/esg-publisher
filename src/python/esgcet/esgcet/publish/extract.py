@@ -9,14 +9,13 @@ from esgcet.exceptions import *
 from esgcet.config import splitLine, getConfig
 from utility import getTypeAndLen, issueCallback, compareFiles, checksum, extraFieldsGet
 
-NAME=0
-LENGTH=1
-SEQ=2
+NAME = 0
+LENGTH = 1
+SEQ = 2
 
-CREATE_OP=1
-DELETE_OP=2
-UPDATE_OP=4
-REPLACE_OP=5
+CREATE_OP = 1
+DELETE_OP = 2
+ADD_VERSION_OP = 3
 
 # When translating numpy arrays (e.g., dimension values) to strings, don't include newlines
 numpy.set_printoptions(threshold=numpy.inf, linewidth=numpy.inf)
@@ -57,7 +56,7 @@ def extractFromDataset(datasetName, fileIterator, dbSession, handler, cfHandler,
       Boolean, True if the files are offline, cannot be scanned.
 
     operation
-      Publication operation, one of CREATE_OP, DELETE_OP, UPDATE_OP
+      Publication operation, one of CREATE_OP, DELETE_OP
 
     progressCallback
       Tuple (callback, initial, final) where ``callback`` is a function of the form ``callback(progress)``, ``initial`` is the initial value reported, ``final`` is the final value reported.
@@ -129,12 +128,9 @@ def extractFromDataset(datasetName, fileIterator, dbSession, handler, cfHandler,
     dset = session.query(Dataset).filter_by(name=datasetName).first()
     if dset is not None:
         if operation==CREATE_OP:
-            operation = REPLACE_OP
-    else:
-        if operation in [UPDATE_OP, REPLACE_OP]:
-            operation = CREATE_OP
-        elif operation in [DELETE_OP]:
-            raise ESGPublishError("No such dataset: %s"%datasetName)
+            operation = ADD_VERSION_OP
+    elif operation in [DELETE_OP]:
+        raise ESGPublishError("No such dataset: %s"%datasetName)
 
     # Cannot add online files to offline dataset, and vice versa
     if dset is not None and dset.offline != offline:
@@ -158,7 +154,7 @@ def extractFromDataset(datasetName, fileIterator, dbSession, handler, cfHandler,
         addNewVersion, fobjs = createDataset(dset, pathlist, session, handler, cfHandler, configOptions, aggregateDimensionName=aggregateDimensionName, offline=offline, progressCallback=progressCallback, stopEvent=stopEvent, extraFields=extraFields, masterGateway=masterGateway, **context)
         info("dataset scan complete, not writing to database")
         return dset
-       
+
     elif operation==CREATE_OP:
         # Create a new dataset
         info("Creating dataset: %s"%datasetName)
@@ -169,20 +165,20 @@ def extractFromDataset(datasetName, fileIterator, dbSession, handler, cfHandler,
         existingVersion = 0
         eventFlag = CREATE_DATASET_EVENT
         addNewVersion, fobjs = createDataset(dset, pathlist, session, handler, cfHandler, configOptions, aggregateDimensionName=aggregateDimensionName, offline=offline, progressCallback=progressCallback, stopEvent=stopEvent, extraFields=extraFields, masterGateway=masterGateway, useVersion=useVersion, **context)
-        
-    elif operation in [UPDATE_OP, REPLACE_OP]:
-        if operation==REPLACE_OP:
-            versionObj = dset.getVersionObj(-1)
-            if useVersion > -1 and versionObj.version > useVersion:
-                raise ESGPublishError("Newer version of dataset %s exists - cannot publish older version of the same dataset."%dset.name)
-        else:
-            versionObj = dset.getVersionObj(useVersion)
-        if versionObj is None:
-            raise ESGPublishError("Version %d of dataset %s not found, cannot republish."%(useVersion, dset.name))
+
+    elif operation==ADD_VERSION_OP:
+        # Add a new version of a dataset
+        versionObj = dset.getVersionObj(-1)
+        if useVersion > -1:
+            if versionObj.version > useVersion:
+                raise ESGPublishError("Newer version(%s) of dataset %s exists - cannot publish version %s."%(versionObj.version, dset.name, useVersion))
+            elif versionObj.version == useVersion:
+                raise ESGPublishError("Version %s of dataset %s already published - cannot publish the same version twice."%(useVersion, dset.name))
+
         existingVersion = dset.getVersion()
         eventFlag = UPDATE_DATASET_EVENT
-        addNewVersion, fobjs = updateDatasetVersion(dset, versionObj, pathlist, session, handler, cfHandler, configOptions, aggregateDimensionName=aggregateDimensionName, offline=offline, progressCallback=progressCallback, stopEvent=stopEvent, extraFields=extraFields, replace=(operation==REPLACE_OP), forceRescan=forceRescan, useVersion=useVersion, **context)
-         
+        addNewVersion, fobjs = updateDatasetVersion(dset, versionObj, pathlist, session, handler, cfHandler, configOptions, aggregateDimensionName=aggregateDimensionName, offline=offline, progressCallback=progressCallback, stopEvent=stopEvent, extraFields=extraFields, forceRescan=forceRescan, useVersion=useVersion, **context)
+
     elif operation==DELETE_OP:
         versionObj = dset.getVersionObj(useVersion)
         if versionObj is None:
@@ -219,18 +215,6 @@ def extractFromDataset(datasetName, fileIterator, dbSession, handler, cfHandler,
             session.delete(var)
         newDsetVersionObj.files.extend(fobjs)
         event = Event(datasetName, newDsetVersionObj.version, eventFlag)
-        dset.events.append(event)
-        dset.reaggregate = True
-    # Keep the current (latest) version
-    elif addNewVersion and newVersion==existingVersion and operation in [UPDATE_OP, REPLACE_OP]:
-        versionObj.deleteChildren(session)
-        versionObj.reset(creation_time=createTime, comment=comment)
-        info("Keeping dataset version = %d"%versionObj.version)
-        for var in dset.variables:
-            session.delete(var)
-        session.commit()
-        versionObj.files.extend(fobjs)
-        event = Event(datasetName, versionObj.version, eventFlag)
         dset.events.append(event)
         dset.reaggregate = True
     elif masterGateway is not None:     # Force version set on replication
@@ -310,14 +294,7 @@ def createDataset(dset, pathlist, session, handler, cfHandler, configOptions, ag
 
     return True, fobjlist
 
-def updateDatasetVersion(dset, dsetVersion, pathlist, session, handler, cfHandler, configOptions, aggregateDimensionName=None, offline=False, progressCallback=None, stopEvent=None, extraFields=None, replace=False, forceRescan=False, useVersion=-1, **context):
-
-    if replace:
-        info("Replacing files in dataset: %s, version %d"%(dset.name, dsetVersion.version))
-    else:
-        info("Updating files in dataset: %s, version %d"%(dset.name, dsetVersion.version))
-
-    haveLatestDsetVersion = (dsetVersion.version == dset.getVersion())
+def updateDatasetVersion(dset, dsetVersion, pathlist, session, handler, cfHandler, configOptions, aggregateDimensionName=None, offline=False, progressCallback=None, stopEvent=None, extraFields=None, forceRescan=False, useVersion=-1, **context):
 
     # Get the list of FileVersion objects for this version
     locdict = {}
@@ -335,15 +312,11 @@ def updateDatasetVersion(dset, dsetVersion, pathlist, session, handler, cfHandle
 
     # For each item in the pathlist:
     seq = 0
-    fileModified = False                # Any file has been modified (added, replaced, or deleted)
     newFileVersionObjs = []
     nfiles = len(pathlist)
     for path, sizet in pathlist:
-
-        # Rescan this file if it has been added, or replaced
-        rescanFile = haveLatestDsetVersion
-
-        size, mtime=sizet
+        rescanFile = True
+        size, mtime = sizet
         csum = None
         csumtype = checksumType
         techNotes = None
@@ -351,12 +324,8 @@ def updateDatasetVersion(dset, dsetVersion, pathlist, session, handler, cfHandle
         datasetTechNotes = None
         datasetTechNotesTitle = None
         if extraFields is not None:
-            if useVersion != -1:
-                csum = extraFields.get((dset.name, useVersion, path, 'checksum'), None)
-                csumtype = extraFields.get((dset.name, useVersion, path, 'checksum_type'), None)
-            else:
-                csum = extraFieldsGet(extraFields, (dset.name, path, 'checksum'), dsetVersion)
-                csumtype = extraFieldsGet(extraFields, (dset.name, path, 'checksum_type'), dsetVersion)
+            csum = extraFields.get((dset.name, useVersion, path, 'checksum'), None)
+            csumtype = extraFields.get((dset.name, useVersion, path, 'checksum_type'), None)
             techNotes = extraFields.get((dset.name, useVersion, path, 'tech_notes'), None)
             techNotesTitle = extraFields.get((dset.name, useVersion, path, 'tech_notes_title'), None)
             datasetTechNotes = extraFields.get((dset.name, useVersion, path, 'dataset_tech_notes'), None)
@@ -370,29 +339,14 @@ def updateDatasetVersion(dset, dsetVersion, pathlist, session, handler, cfHandle
             dset.dataset_tech_notes = datasetTechNotes
             dset.dataset_tech_notes_title = datasetTechNotesTitle
 
-        # Check if 'from_file' was specified for this file
-        fromfile = None
-        if extraFields is not None:
-            fromfile = extraFieldsGet(extraFields, (dset.name, path, 'from_file'), dsetVersion)
-        if fromfile is None:
-            oldpath = path
-        else:
-            frombase = os.path.basename(fromfile)
-            tobase = os.path.basename(path)
-            if frombase!=tobase:
-                info("Basenames are different for files: %s and %s. Ignoring 'from_file' option."%(path, fromfile))
-                oldpath = path
-            else:
-                oldpath = fromfile
-
         # If the item is in the current dataset version, get the file version obj and add to the list
-        if locdict.has_key(oldpath):
-            del todelete[oldpath]
-            fileVersionObj = locdict[oldpath]
+        if locdict.has_key(path):
+            del todelete[path]
+            fileVersionObj = locdict[path]
             fileObj = fileVersionObj.parent
             
             # If the file matches the existing file version, no-op, ...
-            if os.path.exists(oldpath) and compareFiles(fileVersionObj, handler, path, size, offline, checksum=csum):
+            if os.path.exists(path) and compareFiles(fileVersionObj, handler, path, size, offline, checksum=csum):
                 if not forceRescan:
                     info("File %s exists, skipping"%path)
                 newFileVersionObjs.append(fileVersionObj)
@@ -400,8 +354,6 @@ def updateDatasetVersion(dset, dsetVersion, pathlist, session, handler, cfHandle
 
             # ... else create a new version of the file
             else:
-                if oldpath!=path:
-                    info("Replacing file %s"%oldpath)
                 newFileVersionObj = FileVersionFactory(fileObj, path, session, size, mod_time=mtime, checksum=csum, checksum_type=csumtype, tech_notes=techNotes, tech_notes_title=techNotesTitle)
                 newFileVersionObjs.append(newFileVersionObj)
                 fileObj.deleteChildren(session)
@@ -433,24 +385,13 @@ def updateDatasetVersion(dset, dsetVersion, pathlist, session, handler, cfHandle
             session.close()
             raise
 
-    # If updating, add the file version objects ...
-    if not replace:
-        for fileVersionObj in todelete.values():
-            newFileVersionObjs.append(fileVersionObj)
+    # delete the file object children
+    for fileVersionObj in todelete.values():
+        fileObj = fileVersionObj.parent
+        fileObj.deleteChildren(session)
+        fileModified = True
 
-    # ... else if rescanning delete the file object children
-    elif haveLatestDsetVersion:
-        for fileVersionObj in todelete.values():
-            fileObj = fileVersionObj.parent
-            fileObj.deleteChildren(session)
-            fileModified = True
-
-    # Create a new dataset version if:
-    # - a file has been added, replaced, or deleted, and
-    # - the current version is the latest
-    createNewDatasetVersion = haveLatestDsetVersion and fileModified
-    
-    return createNewDatasetVersion, newFileVersionObjs
+    return True, newFileVersionObjs
 
 def deleteFilesVersion(dset, dsetVersion, pathlist, session, cfHandler, configOptions, aggregateDimensionName=None, offline=False, progressCallback=None, stopEvent=None, extraFields=None, **context):
 

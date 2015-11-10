@@ -1,7 +1,7 @@
 "ESG-CET publishing modules"
 
 from publish import publishDataset, publishDatasetList, pollDatasetPublicationStatus
-from extract import extractFromDataset, aggregateVariables, CREATE_OP, DELETE_OP, UPDATE_OP, REPLACE_OP
+from extract import extractFromDataset, aggregateVariables, CREATE_OP, DELETE_OP, ADD_VERSION_OP
 from utility import filelistIterator, fnmatchIterator, fnIterator, directoryIterator, multiDirectoryIterator, nodeIterator, progressCallback, StopEvent, readDatasetMap, datasetMapIterator, iterateOverDatasets, processIterator, processNodeMatchIterator, checksum, extraFieldsGet, parseDatasetVersionId, generateDatasetVersionId, compareFilesByPath
 from thredds import generateThredds, reinitializeThredds, generateThreddsOutputPath, updateThreddsMasterCatalog, updateThreddsRootCatalog
 from hessianlib import Hessian, RemoteCallException

@@ -59,8 +59,6 @@ def generateReplicaThreddsCatalog(mapfile, operation, sourceCatalogDictionary, s
       One of the following, as defined in esgcet.publish:
 
       CREATE_OP: Create new replica dataset(s)
-      UPDATE_OP: Append to existing dataset(s)
-      REPLACE_OP: Replace existing dataset(s)
 
     sourceCatalogDictionary
       A dictionary mapping datasetId => String source THREDDS catalog. The source catalogs contain extra metadata not obtainable from the data files.

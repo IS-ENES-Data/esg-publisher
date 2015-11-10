@@ -647,7 +647,7 @@ class Dataset(object):
         Returns one of these values, as defined in esgcet.model:
 
         - ADD_FILE_EVENT
-        - CREATE_DATASET_EVENT
+        - ADD_DATASET_VERSION_EVENT
         - DELETE_DATASET_EVENT
         - DELETE_DATASET_FAILED_EVENT
         - DELETE_FILE_EVENT

@@ -7,7 +7,7 @@ import logging
 import string
 
 from esgcet.model import *
-from esgcet.publish import deleteDatasetList, updateThreddsMasterCatalog, reinitializeThredds, DELETE, UNPUBLISH, NO_OPERATION, readDatasetMap, parseDatasetVersionId, generateDatasetVersionId, iterateOverDatasets, UPDATE_OP, publishDatasetList
+from esgcet.publish import deleteDatasetList, updateThreddsMasterCatalog, reinitializeThredds, DELETE, UNPUBLISH, NO_OPERATION, readDatasetMap, parseDatasetVersionId, generateDatasetVersionId, iterateOverDatasets, ADD_VERSION_OP, publishDatasetList
 from esgcet.config import loadConfig, initLogging, registerHandlers
 from esgcet.exceptions import *
 from sqlalchemy import create_engine
@@ -216,7 +216,7 @@ def main(argv):
             republishDatasetNames = [generateDatasetVersionId(dsetTuple) for dsetTuple in republishList]
             dmap, offline = queryDatasetMap(republishDatasetNames, Session)
             datasetNames = dmap.keys()
-            datasets = iterateOverDatasets(None, dmap, None, republishList, Session, "time", UPDATE_OP, None, {}, offline, {}, forceAggregate=True)
+            datasets = iterateOverDatasets(None, dmap, None, republishList, Session, "time", ADD_VERSION_OP, None, {}, offline, {}, forceAggregate=True)
             republishOp = (gatewayOp != NO_OPERATION) # Don't republish if skipping the gateway op
             result = publishDatasetList(datasetNames, Session, publish=republishOp, thredds=thredds)
 

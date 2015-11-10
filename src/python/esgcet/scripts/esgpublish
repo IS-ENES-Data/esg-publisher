@@ -10,7 +10,7 @@ import re
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from esgcet.publish import extractFromDataset, aggregateVariables, filelistIterator, fnmatchIterator, fnIterator, directoryIterator, multiDirectoryIterator, progressCallback, StopEvent, readDatasetMap, datasetMapIterator, iterateOverDatasets, publishDatasetList, processIterator, processNodeMatchIterator, CREATE_OP, DELETE_OP, UPDATE_OP, REPLACE_OP
+from esgcet.publish import extractFromDataset, aggregateVariables, filelistIterator, fnmatchIterator, fnIterator, directoryIterator, multiDirectoryIterator, progressCallback, StopEvent, readDatasetMap, datasetMapIterator, iterateOverDatasets, publishDatasetList, processIterator, processNodeMatchIterator, CREATE_OP, DELETE_OP
 from esgcet.config import loadConfig, getHandler, getHandlerByName, initLogging, registerHandlers, splitLine, getOfflineLister
 from esgcet.exceptions import *
 from esgcet.messaging import debug, info, warning, error, critical, exception
@@ -96,7 +96,8 @@ Options:
         with caution, as the version number will apply to all datasets processed. See --keep-version and --version-list.
 
     --nodbwrite
-         Scan the files, but do not write the dataset to the postgres database.  This option should not be used with --noscan, --thredds, --publish, as it is intended for "dry-runs" to validate metadata.
+         Scan the files, but do not write the dataset to the postgres database. 
+         This option should not be used with --noscan, --thredds, --publish, as it is intended for "dry-runs" to validate metadata.
 
     --noscan
         Skip the scan phase and just publish. Assumes that the scan has already been done!
@@ -143,11 +144,6 @@ Options:
         directory with the config file option 'directory_format'.  See
         --read-directories and Notes.
 
-    -r, --replace
-        Replace the dataset. If the dataset exists, all file entries not in the 'new' dataset are removed,
-        existing files are replaced, and new files are added. If the dataset does not exist, the operation
-        is the same as --create.
-
     --rest-api
         Publish using the RESTful publication services. The configuration file option ``rest_service_url''
         defines the service location. If it is undefined, the service location is
@@ -180,17 +176,6 @@ Options:
         without the overhead of a TDS reinitialization call, followed by a single reinitialization call.
         Use this option with caution, as it will leave the database and THREDDS catalogs in an inconsistent
         state.
-
-    -u, --update
-        If a dataset exists, update (replace or append) listed files
-        to the dataset. If the --map form of the command is used, each
-        line of the dataset map has the form:
-
-            dataset_id | to_file | size_in_bytes [ | *from_file*=path]
-
-        If from_file is specified, the file from_file is replaced by to_file. If from_file is not specified,
-        the file to_file replaces the dataset file with the same path. Note: in contrast to --replace,
-        any existing file entries not in the 'new' dataset remain in the dataset.
 
     --use-existing dataset_name
         Run the scan phase based on dataset and file information already in the database.
@@ -238,7 +223,7 @@ Examples:
 def main(argv):
 
     try:
-        args, lastargs = getopt.getopt(argv, "a:cdehi:m:p:ru", ['append', 'create', 'dataset=', 'delete-files', 'echo-sql', 'experiment=', 'filter=', 'help', 'keep-version', 'log=', 'map=', 'message=', 'model=', 'offline', 'per-time', 'per-variable', 'project=', 'property=', 'publish', 'new-version=', 'no-thredds-reinit', 'noscan', 'read-directories', 'read-files', 'replace', 'rest-api', 'service=', 'set-replica', 'summarize-errors', 'thredds', 'thredds-reinit', 'update', 'use-existing=', 'use-list=', 'validate=', 'version-list=', 'nodbwrite'])
+        args, lastargs = getopt.getopt(argv, "a:cdehi:m:p:", ['create', 'dataset=', 'delete-files', 'echo-sql', 'experiment=', 'filter=', 'help', 'keep-version', 'log=', 'map=', 'message=', 'model=', 'offline', 'per-time', 'per-variable', 'project=', 'property=', 'publish', 'new-version=', 'no-thredds-reinit', 'noscan', 'read-directories', 'read-files', 'rest-api', 'service=', 'set-replica', 'summarize-errors', 'thredds', 'thredds-reinit', 'use-existing=', 'use-list=', 'validate=', 'version-list=', 'nodbwrite'])
     except getopt.error:
         print sys.exc_value
         print usage
@@ -280,8 +265,6 @@ def main(argv):
     for flag, arg in args:
         if flag=='-a':
             aggregateDimension = arg
-        elif flag=='--append':
-            publishOp = UPDATE_OP
         elif flag in ['-c', '--create']:
             publishOp = CREATE_OP
         elif flag=='--dataset':
@@ -339,8 +322,6 @@ def main(argv):
             readFiles = False
         elif flag=='--read-files':
             readFiles = True
-        elif flag in ['-r', '--replace']:
-            publishOp = REPLACE_OP
         elif flag=='--rest-api':
             restApi = True
         elif flag=='--service':
@@ -353,8 +334,6 @@ def main(argv):
             thredds = True
         elif flag=='--thredds-reinit':
             threddsReinit = True
-        elif flag in ['-u', '--update']:
-            publishOp = UPDATE_OP
         elif flag=='--use-existing':
             rescan = True
             rescanDatasetName.append(arg)

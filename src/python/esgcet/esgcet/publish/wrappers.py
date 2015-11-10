@@ -9,7 +9,7 @@ import re
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from esgcet.publish import extractFromDataset, aggregateVariables, filelistIterator, fnmatchIterator, fnIterator, directoryIterator, multiDirectoryIterator, progressCallback, StopEvent, readDatasetMap, datasetMapIterator, iterateOverDatasets, publishDatasetList, processIterator, processNodeMatchIterator, CREATE_OP, DELETE_OP, UPDATE_OP, REPLACE_OP, checksum
+from esgcet.publish import extractFromDataset, aggregateVariables, filelistIterator, fnmatchIterator, fnIterator, directoryIterator, multiDirectoryIterator, progressCallback, StopEvent, readDatasetMap, datasetMapIterator, iterateOverDatasets, publishDatasetList, processIterator, processNodeMatchIterator, CREATE_OP, DELETE_OP, checksum
 from esgcet.config import loadConfig, getHandler, getHandlerByName, initLogging, registerHandlers, CFHandler, splitLine, getOfflineLister
 from esgcet.exceptions import *
 from esgcet.messaging import debug, info, warning, error, critical, exception

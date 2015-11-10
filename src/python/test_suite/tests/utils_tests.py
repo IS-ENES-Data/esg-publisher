@@ -1,6 +1,13 @@
 # To contain at least a success and failure test for each function in the utils directory
 import unittest
 
+
+### I'M NOT SURE IF WE NEED THIS MODULE
+#
+# The intention was to have tests that test the functionality works in
+# verify module. Maybe not needed.
+
+
 try:
     import esgf.publisher as publisher
 except:
@@ -26,15 +33,16 @@ class UtilsTests(unittest.TestCase):
 
     def test_get_all_verify_funcs_all(self):
         self.assertEqual(verify.get_all_verify_funcs(),
-            (verify.verify_files_on_disk, verify.verify_published_to_db,
-             verify.verify_published_to_tds, verify.verify_published_to_solr))
+            [verify.verify_published_to_db,
+             verify.verify_published_to_tds,
+             verify.verify_published_to_solr])
 
     def test_get_all_verify_funcs_single_arg(self):
-        self.assertEqual(verify.get_all_verify_funcs("solr"),
-            (verify.verify_published_to_solr,))
+        self.assertEqual(verify.get_all_verify_funcs(("solr",)),
+            [verify.verify_published_to_solr])
 
     def test_fails_get_all_verify_funcs(self):
-        self.assertRaises(Exception, verify.get_all_verify_funcs, ("disk", "nonsense",))
+        self.assertRaises(Exception, verify.get_all_verify_funcs, ("solr", "nonsense",))
 
     def test_get_file_list(self):
         resp = verify.get_file_list(good.id)
@@ -43,13 +51,6 @@ class UtilsTests(unittest.TestCase):
     def test_fails_get_file_list(self):
         self.assertRaises(ESGFPublicationTestError, verify.get_file_list,
                           (bad.id,))
-
-    def test_verify_files_on_disk(self):
-        verify.verify_files_on_disk(good.id, good.files)
-
-    def test_fails_verify_files_on_disk(self):
-        self.assertRaises(ESGFPublicationVerificationError, verify.verify_files_on_disk,
-                          (bad.id, bad.files))
 
     def test_verify_published_to_db(self):
         verify.verify_published_to_db(good.id, good.files)
@@ -81,4 +82,5 @@ class UtilsTests(unittest.TestCase):
 
 if __name__ == "__main__":
 
-    unittest.main()
+    suite = unittest.TestLoader().loadTestsFromTestCase(UtilsTests)
+    unittest.TextTestRunner(verbosity=2).run(suite)

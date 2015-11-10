@@ -4,8 +4,7 @@ import os
 config = None
 
 def parse_test_config():
-    top_dir = os.path.realpath(os.path.curdir)
-    #top_dir = os.path.split(os.path.realpath(os.path.curdir))[0]
+    top_dir = os.path.split(os.path.realpath(os.path.curdir))[0]
     conf = ConfigParser.ConfigParser()
     conf.read(os.path.join(top_dir, "test_suite.ini"))
 

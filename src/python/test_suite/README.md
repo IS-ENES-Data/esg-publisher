@@ -43,6 +43,8 @@ The following pre-conditions are required for the Test Suite:
   * These will point to (1) but will include a {{ BASEDIR }} section that must be replaced by the real path on the local node.
 3. Pre-generated ESGF config file set
 4. Pre-generated policies file (maps users/roles to which data can be published)
+5. Need to generate a user to publish.
+6. User must have appropriate certificates, access etc.
 
 ##The Test Suite
 
@@ -222,20 +224,10 @@ Need to test all access methods (if we can):
 
 The test methods (within each test class) are named using the following convention:
 
-    test_<TNN>_<what_the_test_does>
+    test_<NN>_<MM>_<what_the_test_does>
     
-Where \<T\> is the Test Number, \<NN\> is a two-digit number and \<what_the_test_does\> is a short name describing the test contents.
+Where \<NN\> is the two-digit Test Case (class), \<MM\> is a two-digit number of the test (method) and \<what_the_test_does\> is a short name describing the test contents.
 
-Note that test methods are executed in alphabetical order! It is therefore important to use the <\TNN\> in the method names to prescribe the order in which you want the methods to be executed.
+Note that test methods are executed in alphabetical order! It is therefore important to use the <\NN\> and <\MM\> in the method names to prescribe the order in which you want the methods to be executed.
  
-##Running the suite
-
-To run the test suite:
-
- 1. Enter the "test_suite" directory.
-
- 2. Run the "test_suite_runner.py" script: 
-
-    $ python tests/test_suite_runner.py 
-
-Alternatively you can run any of the individual test modules that follow the naming convention "test_*.py".
+ 

@@ -14,15 +14,14 @@ def get_file_list(dsid):
 def get_all_verify_funcs(publication_levels=None):
     verify_funcs = []
 
+    if not publication_levels:
+        publication_levels = ic.PublicationLevels.all()
+
     for pub_level in publication_levels:
         if pub_level not in ic.PublicationLevels.all():
             raise ic.ESGFPublicationTestError("Publication level not known: %s" % pub_level)
 
-        if pub_level == "disk":
-            func_name = "verify_files_on_disk"
-        else:
-            func_name = "verify_published_to_%s" % pub_level
-
+        func_name = "verify_published_to_%s" % pub_level
         verify_funcs.append(eval(func_name))
 
     return verify_funcs
@@ -46,10 +45,6 @@ def verify_dataset_published(dsid, publication_levels=None):
 
     return True
 
-def verify_files_on_disk(dsid, file_list):
-    # Checks files are on disk
-    return True
-
 def verify_published_to_db(dsid, file_list):
     # Checks database has dataset record with related file records matching file_list
     return True
@@ -62,12 +57,22 @@ def verify_published_to_solr(dsid, file_list):
     # Checks SOLR has dataset record with related file records matching file_list
     return True
 
+def verify_consistency(dsid):
+    """
+    Use meta_synchro if appropriate.
+    Checks that contents of dataset are consistent across db, TDS and SOLR.
+    Returns True if all are consistent.
+    """
+    file_list = get_file_list(dsid)
+    assert file_list
+
+    return True
+
 def verify_dataset_unpublished(dsid):
 
     verify_funcs = (verify_unpublished_from_solr,
                     verify_unpublished_from_db,
-                    verify_unpublished_from_tds,
-                    verify_files_not_on_disk)
+                    verify_unpublished_from_tds)
 
     file_list = get_file_list(dsid)
     assert file_list # Check exists
@@ -80,15 +85,6 @@ def verify_dataset_unpublished(dsid):
                 "DSID: %s, Level: %s" % (dsid, verify_func.func_name.split("_")[-1]))
 
     return True
-
-def verify_files_not_on_disk(dsid, file_list):
-    # NOTE: this is not simply "not verify_files_on_disk()"
-    # We want to verify ALL content is not there
-    # Any partial match should raise an Exception
-
-    # TODO:
-    # - assert no files are on disk from file_list (following DRS structure from dataset id)
-    pass
 
 def verify_unpublished_from_db(dsid, file_list):
     # NOTE: this is not simply "not verify_published_to_db()"
@@ -121,15 +117,9 @@ def verify_unpublished_from_solr(dsid, file_list):
     pass
 
 def verify_empty():
-    verify_no_files_on_disk()
     verify_db_empty()
     verify_tds_empty()
     verify_solr_empty()
-
-def verify_no_files_on_disk():
-    empty = True
-    if not empty:
-        raise ic.ESGFPublicationTestError("Test file system is not empty!")
 
 def verify_db_empty():
     empty = True

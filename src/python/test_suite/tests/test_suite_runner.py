@@ -17,7 +17,7 @@ from utils import config
 
 def gather_tests():
     "Returns a list of tests to run."
-    tests_dir = os.path.join(config["test_base_dir"], "tests")
+    tests_dir = config["test_base_dir"]
     test_mods = [test_mod.split(".")[0] for test_mod in os.listdir(tests_dir) if re.match("test_\d", test_mod)]
     test_classes = set()
 
@@ -32,7 +32,6 @@ def gather_tests():
 
 def run_suite():
     test_classes = gather_tests()
-    print test_classes
 
     for test_class in test_classes:
         suite = unittest.TestLoader().loadTestsFromTestCase(test_class)

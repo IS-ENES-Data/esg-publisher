@@ -177,7 +177,7 @@ def extractFromDataset(datasetName, fileIterator, dbSession, handler, cfHandler,
 
         existingVersion = dset.getVersion()
         eventFlag = UPDATE_DATASET_EVENT
-        addNewVersion, fobjs = updateDatasetVersion(dset, versionObj, pathlist, session, handler, cfHandler, configOptions, aggregateDimensionName=aggregateDimensionName, offline=offline, progressCallback=progressCallback, stopEvent=stopEvent, extraFields=extraFields, forceRescan=forceRescan, useVersion=useVersion, **context)
+        addNewVersion, fobjs = addDatasetVersion(dset, versionObj, pathlist, session, handler, cfHandler, configOptions, aggregateDimensionName=aggregateDimensionName, offline=offline, progressCallback=progressCallback, stopEvent=stopEvent, extraFields=extraFields, forceRescan=forceRescan, useVersion=useVersion, **context)
 
     elif operation==DELETE_OP:
         versionObj = dset.getVersionObj(useVersion)
@@ -294,7 +294,7 @@ def createDataset(dset, pathlist, session, handler, cfHandler, configOptions, ag
 
     return True, fobjlist
 
-def updateDatasetVersion(dset, dsetVersion, pathlist, session, handler, cfHandler, configOptions, aggregateDimensionName=None, offline=False, progressCallback=None, stopEvent=None, extraFields=None, forceRescan=False, useVersion=-1, **context):
+def addDatasetVersion(dset, dsetVersion, pathlist, session, handler, cfHandler, configOptions, aggregateDimensionName=None, offline=False, progressCallback=None, stopEvent=None, extraFields=None, forceRescan=False, useVersion=-1, **context):
 
     # Get the list of FileVersion objects for this version
     locdict = {}
@@ -344,7 +344,7 @@ def updateDatasetVersion(dset, dsetVersion, pathlist, session, handler, cfHandle
             del todelete[path]
             fileVersionObj = locdict[path]
             fileObj = fileVersionObj.parent
-            
+
             # If the file matches the existing file version, no-op, ...
             if os.path.exists(path) and compareFiles(fileVersionObj, handler, path, size, offline, checksum=csum):
                 if not forceRescan:

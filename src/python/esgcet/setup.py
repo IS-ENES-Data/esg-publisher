@@ -82,7 +82,6 @@ setup(
                'scripts/esginitialize',
                'scripts/esglist_datasets',
                'scripts/esglist_files',
-               'scripts/esgpublish_gui',
                'scripts/esgsetup',
                'scripts/esgpublish',
                'scripts/esgquery_index',

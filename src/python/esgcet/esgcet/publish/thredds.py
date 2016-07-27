@@ -383,64 +383,20 @@ def _genDatasetRoots(parent, rootSpecs):
     for path, location in rootSpecs:
         datasetRoot = SE(parent, "datasetRoot", path=path, location=location)
 
-def _genAggregationsV2(parent, variable, variableID, handler, dataset, project, model, experiment, aggServiceName, aggdim_name, perVarMetadata, versionNumber):
 
-    mdhandler = handler.getMetadataHandler()
-    
-    aggID = "%s.%d.aggregation"%(variableID, versionNumber)
-    try:
-        aggName = handler.generateNameFromContext('variable_aggregation_dataset_name', project_description=project.description, model_description=model.description, experiment_description = experiment.description, variable=variable.short_name, variable_long_name=variable.long_name, variable_standard_name=variable.standard_name)
-    except:
-        aggName = aggID
-    aggDataset = Element("dataset", name=aggName, ID=aggID, urlPath=aggID, serviceName=aggServiceName)
-    aggIDProp = SE(aggDataset, "property", name="aggregation_id", value=aggID)
-    perAggVariables = SE(aggDataset, "variables", vocabulary="CF-1.0")
-    perAggVariable = _genVariable(perAggVariables, variable)
-    aggDataset.append(perVarMetadata)
-    nsmap = {
-        None : "http://www.unidata.ucar.edu/namespaces/netcdf/ncml-2.2"
-        }
+def _genSubAggregation(parent, aggID, aggName, aggServiceName, aggdim_name, fvlist, flag, las_time_delta, calendar, start, lasServiceSpecs,
+                       lasServiceHash, las_configure, new_subaggregation):
+    if new_subaggregation:
+        aggDataset = Element("dataset", name=aggName, ID=aggID, urlPath=aggID, serviceName=aggServiceName)
+        aggIDProp = SE(aggDataset, "property", name="aggregation_id", value=aggID)
+    else:
+        aggDataset = parent
 
-    # Note: Create time_length here so that THREDDS is happy, set its value below
-    timeLengthProp = SE(aggDataset, "property", name="time_length", value="0")
-    netcdf = SE(aggDataset, "netcdf", nsmap=nsmap)
-    aggElem = SE(netcdf, "aggregation", type="joinExisting", dimName=aggdim_name)
-
-    # Sort filevars according to aggdim_first normalized to the dataset basetime
-    filevars = []
-    has_null_aggdim = False
-    for filevar in variable.file_variables:
-        if filevar.aggdim_first is None:
-            has_null_aggdim = True
-            break
-        filevars.append((filevar, normTime(filevar, dataset.aggdim_units, mdhandler)))
-    if has_null_aggdim:
-        return
-    filevars.sort(lambda x,y: cmp(x[1], y[1]))
-
-    nvars = 0
-    agglen = 0
-    for filevar, aggdim_first in filevars:
-        fvdomain = map(lambda x: (x.name, x.length, x.seq), filevar.dimensions)
-        fvdomain.sort(lambda x,y: cmp(x[SEQ], y[SEQ]))
-        if len(fvdomain)>0 and fvdomain[0][0]==aggdim_name:
-            sublen = fvdomain[0][1]
-            fileNetcdf = SE(aggElem, "netcdf", location=filevar.file.getLocation(), ncoords="%d"%sublen)
-            agglen += sublen
-            nvars += 1
-    timeLengthProp.set("value", "%d"%agglen)
-
-    # Create the aggregation if at least one filevar has the aggregate dimension
-    if nvars>0:
-        parent.append(aggDataset)
-
-def _genSubAggregation(parent, aggID, aggName, aggServiceName, aggdim_name, fvlist, flag, las_time_delta, calendar, start, lasServiceSpecs, lasServiceHash):
-    aggDataset = Element("dataset", name=aggName, ID=aggID, urlPath=aggID, serviceName=aggServiceName)
-    aggIDProp = SE(aggDataset, "property", name="aggregation_id", value=aggID)
     if flag==EVEN:
-        timeDeltaProperty = SE(aggDataset, "property", name="time_delta", value=las_time_delta)
         calendarProperty = SE(aggDataset, "property", name="calendar", value=calendar)
-        startProperty = SE(aggDataset, "property", name="start", value=repr(start))
+        if las_configure:
+            timeDeltaProperty = SE(aggDataset, "property", name="time_delta", value=las_time_delta)
+            startProperty = SE(aggDataset, "property", name="start", value=repr(start))
     nsmap = {
         None : "http://www.unidata.ucar.edu/namespaces/netcdf/ncml-2.2"
         }
@@ -448,19 +404,31 @@ def _genSubAggregation(parent, aggID, aggName, aggServiceName, aggdim_name, fvli
     # Note: Create time_length here so that THREDDS is happy, set its value below
     timeLengthProperty = SE(aggDataset, "property", name="time_length", value="0")
 
-    if lasServiceSpecs is not None:
+    if lasServiceSpecs is not None and new_subaggregation:
         _genLASAccess(aggDataset, aggID, lasServiceSpecs, lasServiceHash, "catid", "NetCDF")
 
     netcdf = SE(aggDataset, "netcdf", nsmap=nsmap)
     aggElem = SE(netcdf, "aggregation", type="joinExisting", dimName=aggdim_name)
     agglen = 0
-    for filevar, aggfirst, agglast, units, ncoords in fvlist:
-        fileNetcdf = SE(aggElem, "netcdf", location=filevar.file.getLocation(), ncoords="%d"%ncoords)
-        agglen += ncoords
-    timeLengthProperty.set("value", "%d"%agglen)
-    parent.append(aggDataset)    
+    if las_configure:
+        for filevar, aggfirst, agglast, units, ncoords in fvlist:
+            fileNetcdf = SE(aggElem, "netcdf", location=filevar.file.getLocation(), ncoords="%d"%ncoords)
+            agglen += ncoords
+        timeLengthProperty.set("value", "%d"%agglen)
+    else:
+        for filevar, aggdim_first in fvlist:
+            fvdomain = map(lambda x: (x.name, x.length, x.seq), filevar.dimensions)
+            fvdomain.sort(lambda x, y: cmp(x[SEQ], y[SEQ]))
+            if len(fvdomain) > 0 and fvdomain[0][0] == aggdim_name:
+                sublen = fvdomain[0][1]
+                fileNetcdf = SE(aggElem, "netcdf", location=filevar.file.getLocation(), ncoords="%d" % sublen)
+                agglen += sublen
+        timeLengthProperty.set("value", "%d" % agglen)
 
-def _genLASAggregations(parent, variable, variableID, handler, dataset, project, model, experiment, aggServiceName, aggdim_name, lasTimeDelta, perVarMetadata, versionNumber, lasServiceSpecs, lasServiceHash):
+    if new_subaggregation:
+        parent.append(aggDataset)
+
+def _genAggregations(parent, variable, variableID, handler, dataset, project, model, experiment, aggServiceName, aggdim_name, lasTimeDelta, perVarMetadata, versionNumber, lasServiceSpecs, lasServiceHash, las_configure):
 
     mdhandler = handler.getMetadataHandler()
 
@@ -470,7 +438,7 @@ def _genLASAggregations(parent, variable, variableID, handler, dataset, project,
         aggName = handler.generateNameFromContext('variable_aggregation_dataset_name', project_description=project.description, model_description=model.description, experiment_description = experiment.description, variable=variable.short_name, variable_long_name=variable.long_name, variable_standard_name=variable.standard_name)
     except:
         aggName = aggID
-    aggDataset = Element("dataset", name=aggName, ID=aggID)
+    aggDataset = Element("dataset", name=aggName, ID=aggID, urlPath=aggID, serviceName=aggServiceName)
     aggIDProp = SE(aggDataset, "property", name="aggregation_id", value=aggID)
     perAggVariables = SE(aggDataset, "variables", vocabulary="CF-1.0")
     perAggVariable = _genVariable(perAggVariables, variable)
@@ -485,54 +453,66 @@ def _genLASAggregations(parent, variable, variableID, handler, dataset, project,
         if filevar.aggdim_first is None:
             has_null_aggdim = True
             break
-        r2, s2 = normTimeRange(filevar, dataset.aggdim_units, dataset.calendar, mdhandler)
-        filevars.append((filevar, r2, s2))
+        if las_configure:
+            r2, s2 = normTimeRange(filevar, dataset.aggdim_units, dataset.calendar, mdhandler)
+            filevars.append((filevar, r2, s2))
+        else:
+            filevars.append((filevar, normTime(filevar, dataset.aggdim_units, mdhandler)))
     if has_null_aggdim:
         return                          # No aggregation added
     filevars.sort(lambda x,y: cmp(x[1], y[1]))
 
-    # Add aggregation dimension coordinate length to filevars list
-    ntot = 0
-    nfvars = 0
-    fvlist = []
-    for filevar, aggfirst, agglast in filevars:
-        fvdomain = map(lambda x: (x.name, x.length, x.seq), filevar.dimensions)
-        fvdomain.sort(lambda x,y: cmp(x[SEQ], y[SEQ]))
-        if len(fvdomain)>0 and fvdomain[0][0]==dataset.aggdim_name:
-            ncoords = fvdomain[0][1]
-            ntot += ncoords
-            fvlist.append((filevar, aggfirst, agglast, dataset.aggdim_units, ncoords))
-            nfvars += 1
-
-    # If no file variables have the aggregate dimension, don't create an aggregate
-    if nfvars>0:
+    new_subaggregation = False
+    if not las_configure:
+        _genSubAggregation(aggDataset, aggID, aggName, aggServiceName, aggdim_name, filevars, EVEN, lasTimeDelta, dataset.calendar, None,
+                           lasServiceSpecs, lasServiceHash, las_configure, new_subaggregation)
         parent.append(aggDataset)
+
     else:
-        return
+        # Add aggregation dimension coordinate length to filevars list
+        ntot = 0
+        nfvars = 0
+        fvlist = []
+        for filevar, aggfirst, agglast in filevars:
+            fvdomain = map(lambda x: (x.name, x.length, x.seq), filevar.dimensions)
+            fvdomain.sort(lambda x,y: cmp(x[SEQ], y[SEQ]))
+            if len(fvdomain)>0 and fvdomain[0][0]==dataset.aggdim_name:
+                ncoords = fvdomain[0][1]
+                ntot += ncoords
+                fvlist.append((filevar, aggfirst, agglast, dataset.aggdim_units, ncoords))
+                nfvars += 1
 
-    # Check if the aggregation as a whole is evenly spaced, based on las_time_delta.
-    lasTimeDeltaValue, lasTimeDeltaUnits = parseLASTimeDelta(lasTimeDelta)
-    cdunits = mdhandler.LAS2CDUnits(lasTimeDeltaUnits)
-    cdcalendar = mdhandler.tagToCalendar(dataset.calendar)
-    iseven, first, last, est = mdhandler.checkTimes(filevars[0][1], filevars[-1][2], dataset.aggdim_units, cdcalendar, lasTimeDeltaValue, cdunits, ntot)
+        # If no file variables have the aggregate dimension, don't create an aggregate
+        if nfvars>0:
+            parent.append(aggDataset)
+        else:
+            return
 
-    # If so, just generate one subaggregation
-    if iseven:
-        subAggID = "%s.%d"%(aggID, 1)
-        subAggName = "%s - Subset %d"%(aggName, 1)
-        _genSubAggregation(aggDataset, subAggID, subAggName, aggServiceName, aggdim_name, fvlist, EVEN, lasTimeDelta, dataset.calendar, first, lasServiceSpecs, lasServiceHash)
+        # Check if the aggregation as a whole is evenly spaced, based on las_time_delta.
+        lasTimeDeltaValue, lasTimeDeltaUnits = parseLASTimeDelta(lasTimeDelta)
+        cdunits = mdhandler.LAS2CDUnits(lasTimeDeltaUnits)
+        cdcalendar = mdhandler.tagToCalendar(dataset.calendar)
+        iseven, first, last, est = mdhandler.checkTimes(filevars[0][1], filevars[-1][2], dataset.aggdim_units, cdcalendar, lasTimeDeltaValue, cdunits, ntot)
 
-    # Split the aggregation so that each piece is either evenly spaced or not.
-    else:
-        chunks = splitTimes(fvlist, dataset.calendar, lasTimeDelta, mdhandler)
+        # If so, just generate one subaggregation
+        if iseven:
+            subAggID = "%s.%d"%(aggID, 1)
+            subAggName = "%s - Subset %d"%(aggName, 1)
+            _genSubAggregation(aggDataset, subAggID, subAggName, aggServiceName, aggdim_name, fvlist, EVEN, lasTimeDelta,
+                               dataset.calendar, first, lasServiceSpecs, lasServiceHash, las_configure, new_subaggregation)
 
-        # For each subaggregation generate a dataset.
-        nid = 1
-        for start, stop, flag, nchunk, fa, la, le in chunks:
-            subAggID = "%s.%d"%(aggID, nid)
-            subAggName = "%s - Subset %d"%(aggName, nid)
-            _genSubAggregation(aggDataset, subAggID, subAggName, aggServiceName, aggdim_name, fvlist[start:stop], flag, lasTimeDelta, dataset.calendar, fa, lasServiceSpecs, lasServiceHash)
-            nid += 1
+        # Split the aggregation so that each piece is either evenly spaced or not.
+        else:
+            new_subaggregation = True
+            chunks = splitTimes(fvlist, dataset.calendar, lasTimeDelta, mdhandler)
+            # For each subaggregation generate a dataset.
+            nid = 1
+            for start, stop, flag, nchunk, fa, la, le in chunks:
+                subAggID = "%s.%d"%(aggID, nid)
+                subAggName = "%s - Subset %d"%(aggName, nid)
+                _genSubAggregation(aggDataset, subAggID, subAggName, aggServiceName, aggdim_name, fvlist[start:stop], flag, lasTimeDelta,
+                                   dataset.calendar, fa, lasServiceSpecs, lasServiceHash, las_configure, new_subaggregation)
+                nid += 1
             
 def _genPerVariableDatasetsV2(parent, dataset, datasetName, resolution, filesRootLoc, filesRootPath, datasetRootDict, excludeVariables, offline, serviceName, serviceDict, aggServiceName, handler, project, model, experiment, las_configure, las_time_delta, versionNumber, variablesElem, variableElemDict, lasServiceSpecs, lasServiceHash, gridftpMap=True):
 
@@ -640,10 +620,8 @@ def _genPerVariableDatasetsV2(parent, dataset, datasetName, resolution, filesRoo
         # or the dataset does not have an aggregate dimension
         if variable.has_errors or dataset.aggdim_units is None:
             continue
-        if las_configure:
-            _genLASAggregations(parent, variable, variableID, handler, dataset, project, model, experiment, aggServiceName, aggdim_name, las_time_delta, perVarMetadata, versionNumber, lasServiceSpecs, lasServiceHash)
-        else:
-            _genAggregationsV2(parent, variable, variableID, handler, dataset, project, model, experiment, aggServiceName, aggdim_name, perVarMetadata, versionNumber)
+
+        _genAggregations(parent, variable, variableID, handler, dataset, project, model, experiment, aggServiceName, aggdim_name, las_time_delta, perVarMetadata, versionNumber, lasServiceSpecs, lasServiceHash, las_configure)
 
 def _genPerTimeDatasetsV2(parent, dataset, datasetName, filesRootLoc, filesRootPath, datasetRootDict, excludeVariables, offline, serviceName, serviceDict, handler, project, model, experiment, versionNumber, gridftpMap=True):
     datasetVersionObj = dataset.getVersionObj(versionNumber)
@@ -763,6 +741,7 @@ def generateThredds(datasetName, dbSession, outputFile, handler, datasetInstance
 def _generateThreddsV2(datasetName, outputFile, handler, session, dset, context, project, model, experiment, config, section, genRoot=False, service=None, perVariable=None, versionNumber=-1):
 
     global _nsmap, _XSI
+    gen_las_url = True
     CATALOG_VERSION = "2"
 
     offline = dset.offline
@@ -894,8 +873,11 @@ def _generateThreddsV2(datasetName, outputFile, handler, session, dset, context,
                     property = SE(datasetElem, "property", name=name, value=value)    
             else:
                 try:
-
-                    property = SE(datasetElem, "property", name=name, value=handler.getField(name))
+                    # do not generate LAS urls for fx data
+                    value = handler.getField(name)
+                    if name == 'time_frequency' and value == 'fx':
+                        gen_las_url = False
+                    property = SE(datasetElem, "property", name=name, value=value)
                 except TypeError:
                     raise ESGPublishError("Invalid value for field %s: %s"%(name, handler.getField(name)))
 
@@ -961,7 +943,7 @@ def _generateThreddsV2(datasetName, outputFile, handler, session, dset, context,
     dataFormat.text = "NetCDF"
 
     # Add LAS access element if configuring LAS
-    if lasConfigure and (lasServiceSpecs is not None):
+    if lasConfigure and (lasServiceSpecs is not None) and gen_las_url:
         _genLASAccess(datasetElem, dsetVersionID, lasServiceSpecs, lasServiceHash, "catid", "NetCDF")
 
     if service is not None:

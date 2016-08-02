@@ -156,7 +156,7 @@ def publishDataset(datasetName, parentId, service, threddsRootURL, session, sche
 
     return dset, statusId, state, event.event, status
 
-def publishDatasetList(datasetNames, Session, parentId=None, handlerDictionary=None, publish=True, thredds=True, las=False, progressCallback=None, service=None, perVariable=None, threddsCatalogDictionary=None, reinitThredds=None, readFromCatalog=False, restInterface=False, schema=None):
+def publishDatasetList(datasetNames, Session, parentId=None, handlerDictionary=None, publish=True, thredds=True, las=False, progressCallback=None, service=None, perVariable=None, threddsCatalogDictionary=None, reinitThredds=None, readFromCatalog=False, restInterface=False, schema=None, newVersion=None):
     """
     Publish a list of datasets:
 
@@ -243,14 +243,21 @@ def publishDatasetList(datasetNames, Session, parentId=None, handlerDictionary=N
         reinitThredds = thredds
 
     if thredds:
-        for datasetName,versionno in datasetNames:
+        for datasetName, versionno in datasetNames:
+
             dset = session.query(Dataset).filter_by(name=datasetName).first()
 
             # If the dataset version is not the latest, publish as a per-time dataset without aggregation,
             # since the dataset variables only relate to the latest dataset version
             latestVersion = dset.getVersion()
             if versionno==-1:
-                versionno=latestVersion
+                if not newVersion:
+                    versionno = latestVersion
+                else:
+                    if isinstance(newVersion, dict):
+                        versionno = newVersion[datasetName]
+                    else:
+                        versionno = newVersion
             if versionno!=latestVersion:
                 if perVariable:
                     messaging.info("Generating THREDDS catalog in per-time format, since version %d is not the latest version (%d)"%(versionno,latestVersion))
@@ -325,6 +332,11 @@ def publishDatasetList(datasetNames, Session, parentId=None, handlerDictionary=N
         n = spi * lenresults
         j = 0
         for datasetName,versionno in datasetNames:
+            if versionno==-1 and newVersion:
+                if isinstance(newVersion, dict):
+                    versionno = newVersion[datasetName]
+                else:
+                    versionno = newVersion
             if parentId is None:
                 parentIdent = handler.getParentId(datasetName)
             elif type(parentId)==type({}):

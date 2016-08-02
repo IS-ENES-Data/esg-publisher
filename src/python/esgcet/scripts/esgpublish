@@ -492,7 +492,7 @@ def main(argv):
 
                 if (not nodbwrite):
                     result = publishDatasetList(datasetNames, Session, publish=publish, thredds=thredds, las=las, parentId=parent, service=service,
-                                                perVariable=perVariable, reinitThredds=False, restInterface=restApi, schema=schema)
+                                                perVariable=perVariable, reinitThredds=False, restInterface=restApi, schema=schema, newVersion=version)
                 if summarizeErrors:
                     summarize_errors(Session, datasetNames)
 
@@ -573,7 +573,8 @@ def main(argv):
             datasets = iterateOverDatasets(projectName, dmap, directoryMap, datasetNames, Session, aggregateDimension, publishOp, filefilt, initcontext, offline, properties, keepVersion=keepVersion, newVersion=version, extraFields=extraFields, masterGateway=masterGateway, comment=message, readFiles=readFiles, nodbwrite=nodbwrite)
 
         if (not nodbwrite):
-            result = publishDatasetList(datasetNames, Session, publish=publish, thredds=thredds, las=las, parentId=parent, service=service, perVariable=perVariable, reinitThredds=threddsReinit, restInterface=restApi, schema=schema)
+            result = publishDatasetList(datasetNames, Session, publish=publish, thredds=thredds, las=las, parentId=parent, service=service,
+                                        perVariable=perVariable, reinitThredds=threddsReinit, restInterface=restApi, schema=schema, newVersion=version)
 
         if summarizeErrors:
             summarize_errors(Session, datasetNames)

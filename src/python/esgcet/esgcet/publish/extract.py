@@ -160,7 +160,7 @@ def extractFromDataset(datasetName, fileIterator, dbSession, handler, cfHandler,
         addNewVersion, fobjs = createDataset(dset, pathlist, session, handler, cfHandler, configOptions, aggregateDimensionName=aggregateDimensionName, offline=offline, progressCallback=progressCallback, stopEvent=stopEvent, extraFields=extraFields, masterGateway=masterGateway, **context)
         info("dataset scan complete, not writing to database")
         return dset
-       
+
     elif operation==CREATE_OP:
         # Create a new dataset
         info("Creating dataset: %s"%datasetName)
@@ -173,13 +173,18 @@ def extractFromDataset(datasetName, fileIterator, dbSession, handler, cfHandler,
         addNewVersion, fobjs = createDataset(dset, pathlist, session, handler, cfHandler, configOptions, aggregateDimensionName=aggregateDimensionName, offline=offline, progressCallback=progressCallback, stopEvent=stopEvent, extraFields=extraFields, masterGateway=masterGateway, useVersion=useVersion, **context)
         
     elif operation in [UPDATE_OP, REPLACE_OP]:
+
+        existingVersion = dset.getVersion()
+        if useVersion == -1:
+            useVersion = get_version(newVersion, existingVersion, versionByDate, keepVersion)
+
         if operation==REPLACE_OP:
             versionObj = dset.getVersionObj(-1)
         else:
             versionObj = dset.getVersionObj(useVersion)
+
         if versionObj is None:
             raise ESGPublishError("Version %d of dataset %s not found, cannot republish."%(useVersion, dset.name))
-        existingVersion = dset.getVersion()
         eventFlag = UPDATE_DATASET_EVENT
 
         version_list = dset.getVersionList()
@@ -212,13 +217,7 @@ def extractFromDataset(datasetName, fileIterator, dbSession, handler, cfHandler,
 
     # Create a new dataset version if necessary
     if useVersion == -1:
-        if keepVersion:
-            if existingVersion<=0:
-                newVersion = getInitialDatasetVersion(versionByDate)
-            else:
-                newVersion = existingVersion
-        elif newVersion is None:
-            newVersion = getNextDatasetVersion(existingVersion, versionByDate)
+        newVersion = get_version(newVersion, existingVersion, versionByDate, keepVersion)
     else:
         newVersion = useVersion
 
@@ -269,6 +268,7 @@ def extractFromDataset(datasetName, fileIterator, dbSession, handler, cfHandler,
     session.close()
 
     return dset
+
 
 def createDataset(dset, pathlist, session, handler, cfHandler, configOptions, aggregateDimensionName=None, offline=False, progressCallback=None, stopEvent=None, extraFields=None, masterGateway=None, useVersion=-1, **context):
 
@@ -1090,3 +1090,16 @@ def aggregateVariables(datasetName, dbSession, aggregateDimensionName=None, cfHa
     debug("Adding variable info to database")
     session.commit()
     session.close()
+
+
+def get_version(newVersion, existingVersion, versionByDate, keepVersion):
+    """Get the version number of a dataset"""
+    if keepVersion:
+        if existingVersion <= 0:
+            return getInitialDatasetVersion(versionByDate)
+        else:
+            return existingVersion
+    elif newVersion is None:
+        return getNextDatasetVersion(existingVersion, versionByDate)
+    else:
+        return newVersion

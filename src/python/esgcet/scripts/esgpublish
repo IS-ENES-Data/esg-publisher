@@ -443,7 +443,8 @@ def main(argv):
             vers = int(vers.strip())
             version[dsid] = vers
     
-    # if --create-cim-only specified, just do this and none of the fancy stuff...
+    # if --create-cim-only specified, just do this and quit without 
+    # starting database interaction etc
     if createCimOnly:
         dmap = readDatasetMap(datasetMapfile)
         create_cim_from_dmap(dmap)

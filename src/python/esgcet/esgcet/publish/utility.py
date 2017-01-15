@@ -11,6 +11,9 @@ import logging
 import subprocess
 import filecmp
 import urlparse
+import sys
+import traceback
+
 from esgcet.config import getHandler, getHandlerByName, splitLine, getConfig
 from esgcet.exceptions import *
 from esgcet.messaging import debug, info, warning, error, critical, exception
@@ -968,3 +971,11 @@ def getRestServiceURL():
         host = urlparse.urlparse(hessianServiceURL).netloc
         serviceURL = urlparse.urlunparse(('https', host, '/esg-search/ws', '', '', ''))
     return serviceURL
+
+def tracebackString(indent=0):
+    """
+    Returns the traceback of the current exception as an indented string.
+    """
+    lines = traceback.format_exc(sys.exc_info()[2]).split("\n")
+    prefix = " " * indent
+    return string.join([prefix + line + "\n" for line in lines])

@@ -52,9 +52,9 @@ Options:
 
     --create-cim
         Can only be used in conjunction with --map. Calls cdf2cim as
-        an initial step before publication, to create CIM records.
-        The cdf2cim script will scan for data files below a given
-        starting directory, which will be the deepest common parent
+        an initial step before publication to the database, to create 
+        CIM records.  The cdf2cim script will scan for data files below a 
+        given starting directory, which will be the deepest common parent
         directory of the data files listed in the map file.  If
         filesystem layout recommendations for CMIP6 are followed, it
         will find the same set of data files as listed in the map file.
